@@ -56,18 +56,13 @@ async function authedClient() {
 }
 
 /**
- * Today's events from Google Calendar, normalized to the same shape the
- * frontend already expects:
+ * Events between two Date objects, normalized to the shape the frontend and
+ * the agent both expect:
  *   [{ id, title, start: ISO, end: ISO|null, allDay: bool, location: string|null }]
  */
-export async function getTodayEvents() {
+export async function getEvents(start, end) {
   const auth = await authedClient();
   const calendar = google.calendar({ version: "v3", auth });
-
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
 
   const { data } = await calendar.events.list({
     calendarId: GOOGLE_CALENDAR_ID,

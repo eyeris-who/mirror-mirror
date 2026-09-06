@@ -12,8 +12,10 @@ hides API keys and normalizes data.
 | Weather | Open-Meteo | Free, no key, 7-day daily forecast. |
 | Calendar | Google Calendar API (OAuth) | Real schedule; falls back to `server/data/schedule.json` until connected. |
 | Music | Spotify Web API + Web Playback SDK | Now-playing display; laptop becomes a "Smart Mirror" Spotify speaker. |
+| Voice | Python service (`voice/`) + hybrid router | faster-whisper STT, pyttsx3 TTS; router picks rules / local model / Claude. |
 
-The browser only ever calls `/api/*` on the Express server.
+The browser only ever calls `/api/*` on the Express server. The voice service
+also only calls `/api/*` — it has no knowledge of weather, calendars, etc.
 
 ## Run
 
@@ -21,6 +23,8 @@ The browser only ever calls `/api/*` on the Express server.
 npm install
 npm run dev
 ```
+
+(PowerShell has no `&&` — run multi-step commands one line at a time.)
 
 - Mirror: http://localhost:5173
 - Setup / connections: http://localhost:5173/setup
@@ -103,8 +107,62 @@ Playback needs a **Spotify Premium** account.
 | POST | `/api/spotify/play-search` | `{ "query": "...", "type": "playlist" | "track" }` |
 | POST | `/api/spotify/transfer` | `{ "deviceId": "...", "play": true }` |
 
-## Next
+## Voice assistant
 
-- Voice: `POST /api/command` stub in `server/index.js` — Whisper transcript in,
-  LLM picks weather/calendar/spotify tools, result out.
-- Kiosk: `chrome --kiosk --app=http://localhost:5173` on laptop login.
+```
+voice/main.py ──► POST /api/command {text}
+                       │
+                  server/agent/index.js
+                       │
+                  router.js  ── tier 0: regex patterns     (0 ms, $0, offline)
+                       │      ── tier 1: Ollama local model (~300 ms, $0, offline)
+                       │      ── tier 2: Claude             (~1 s, paid, online)
+                       │
+                  tools.js  ── get_time · get_date · get_weather(when)
+                              get_schedule(range) · play_playlist(name)
+                              run_morning_routine · open_setup
+```
+
+**Hybrid router** — a request stops at the first tier that can answer it. Every
+one of the listed commands is handled at **tier 0**, so the assistant works with
+no model at all. Tiers 1 and 2 only exist for phrasing the patterns miss; tier 2
+only runs if `ANTHROPIC_API_KEY` is set. The tier that answered is written to
+`server/data/metrics.jsonl` along with per-stage timings.
+
+### Setup
+
+Run `voice/` (see `voice/README.md`), then say **"mirror mirror on the wall" →
+"setup"**. The spoken flow asks for your name, wake phrase, morning playlist and
+units. The same fields are editable on `/setup`. Wake-phrase changes need a
+voice-service restart.
+
+### Commands
+
+| Say | Does |
+|---|---|
+| "what's the time" / "what's the date" | speaks it |
+| "what's the weather" / "…tomorrow" / "…this week" | current, next day, or 7-day |
+| "what's on my schedule today / tomorrow / this week" | calendar events for the range |
+| "play my morning playlist" | plays the saved Spotify playlist |
+| "start my morning routine" | date → time → weather → today's events → playlist |
+| "setup" | spoken questionnaire |
+
+## APIs & auth — what each feature needs
+
+| Feature | Service | Auth | Cost |
+|---|---|---|---|
+| Weather | Open-Meteo + BigDataCloud | none | free |
+| Calendar | Google Calendar API | OAuth (browser, one-time) | free |
+| Music | Spotify Web API + Playback SDK | OAuth (browser) + **Premium** | free API, paid account |
+| Speech-to-text | faster-whisper | none (downloads model weights) | free, local |
+| Text-to-speech | pyttsx3 (OS voice) | none | free, local |
+| Wake word | transcribe-and-match (default) | none | free, local |
+| Local model tier | Ollama + a pulled model | none | free, local |
+| Cloud model tier | Claude (`ANTHROPIC_API_KEY`) | API key | per-token, **only tier 2** |
+
+Everything except the Claude tier runs fully offline. Leave `ANTHROPIC_API_KEY`
+blank to stay local-only.
+
+## Kiosk
+
+`chrome --kiosk --app=http://localhost:5173` on laptop login.

@@ -2,6 +2,7 @@ import DateTime from "./components/DateTime.jsx";
 import Weather from "./components/Weather.jsx";
 import Schedule from "./components/Schedule.jsx";
 import NowPlaying from "./components/NowPlaying.jsx";
+import VoiceHUD from "./components/VoiceHUD.jsx";
 import Setup from "./Setup.jsx";
 import { useSpotifyPlayer } from "./hooks/useSpotifyPlayer.js";
 
@@ -21,6 +22,8 @@ function Mirror() {
       <section className="col col--right">
         <Schedule />
       </section>
+
+      <VoiceHUD />
     </main>
   );
 }

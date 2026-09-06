@@ -316,3 +316,86 @@ body {
 .setup__results button:hover {
   background: #1a1a1a;
 }
+
+/* voice assistant settings */
+.setup__field {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.setup__field > span {
+  flex: 0 0 9rem;
+  color: var(--fg-dim);
+}
+.setup__field .setup__input {
+  flex: 1;
+}
+.setup__models {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+  padding: 0.4rem 0;
+}
+
+/* ---- voice HUD (bottom overlay on the mirror) ---- */
+.voicehud {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2rem var(--pad) 1.5rem;
+  display: flex;
+  gap: 0.7em;
+  align-items: flex-start;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.92), transparent);
+  font-weight: 300;
+}
+.voicehud__dot {
+  flex: none;
+  width: 0.6em;
+  height: 0.6em;
+  margin-top: 0.5em;
+  border-radius: 50%;
+  background: var(--fg-dim);
+}
+.voicehud__dot[data-state="listening"] {
+  background: #4caf50;
+  animation: voicehud-pulse 1.2s ease-in-out infinite;
+}
+.voicehud__dot[data-state="thinking"] {
+  background: #e0b020;
+  animation: voicehud-pulse 1.2s ease-in-out infinite;
+}
+.voicehud__dot[data-state="speaking"] {
+  background: #4a90d9;
+}
+@keyframes voicehud-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.voicehud__you {
+  font-size: clamp(1rem, 3vw, 1.6rem);
+}
+.voicehud__status {
+  color: var(--fg-dim);
+  font-size: clamp(1rem, 3vw, 1.5rem);
+}
+.voicehud__reply {
+  color: var(--fg-dim);
+  font-size: clamp(0.9rem, 2.4vw, 1.25rem);
+  margin-top: 0.2em;
+}
+.voicehud__tier {
+  color: #555;
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-top: 0.35em;
+}

@@ -3,10 +3,13 @@ import express from "express";
 import cors from "cors";
 import { getWeather, clearCache as clearWeatherCache } from "./weather.js";
 import { getSchedule } from "./schedule.js";
-import { getSettings, setLocation } from "./settings.js";
+import { getSettings, setLocation, updateAssistant } from "./settings.js";
 import * as geo from "./geo.js";
 import * as google from "./google.js";
 import * as spotify from "./spotify.js";
+import * as llm from "./agent/llm.js";
+import { handleCommand } from "./agent/index.js";
+import { logMetric } from "./agent/metrics.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -56,6 +59,17 @@ app.put("/api/settings/location", async (req, res) => {
   }
 });
 
+app.put("/api/settings/assistant", async (req, res) => {
+  try {
+    const saved = await updateAssistant(req.body ?? {});
+    clearWeatherCache(); // units may have changed
+    res.json(saved);
+  } catch (err) {
+    console.error("assistant settings:", err.message);
+    res.status(500).json({ error: "save_failed" });
+  }
+});
+
 app.get("/api/geo/search", async (req, res) => {
   try {
     res.json({ results: await geo.search(String(req.query.q ?? "")) });
@@ -84,6 +98,10 @@ app.get("/api/status", async (_req, res) => {
     spotify: {
       configured: spotify.isConfigured(),
       connected: await spotify.isConnected(),
+    },
+    assistant: {
+      cloudConfigured: llm.cloudConfigured(),
+      localReachable: await llm.localAvailable(),
     },
   });
 });
@@ -173,13 +191,50 @@ app.post(
   control((req) => spotify.playSearch(req.body.query, req.body.type)),
 );
 
-// --- Where the voice layer plugs in later ----------------------------
-// app.post("/api/command", async (req, res) => {
-//   const { text } = req.body;                // transcript from Whisper
-//   const result = await routeCommand(text);  // LLM picks weather / calendar / spotify
-//   res.json(result);
-// });
-// --------------------------------------------------------------------
+// ---- voice / assistant ---------------------------------------------
+// Per-caller conversation state (just an in-progress setup flow for now).
+const sessions = new Map();
+
+app.post("/api/command", async (req, res) => {
+  const { text, sessionId = "default" } = req.body ?? {};
+  if (!text || !text.trim()) return res.status(400).json({ error: "no_text" });
+
+  try {
+    const session = sessions.get(sessionId) ?? {};
+    const out = await handleCommand(text.trim(), session);
+
+    if (out.setup) sessions.set(sessionId, { setup: out.setup });
+    else sessions.delete(sessionId);
+
+    res.json({
+      speak: out.speak,
+      segments: out.segments,
+      expectReply: out.expectReply,
+      tier: out.tier,
+    });
+  } catch (err) {
+    console.error("command:", err.message);
+    res
+      .status(500)
+      .json({ error: "command_failed", speak: "Sorry, something went wrong." });
+  }
+});
+
+// Live state for the on-mirror voice indicator. The Python service POSTs here;
+// the web app polls it.
+let voiceState = { state: "idle", transcript: "", response: "", tier: null };
+
+app.get("/api/voice/state", (_req, res) => res.json(voiceState));
+
+app.post("/api/voice/state", (req, res) => {
+  voiceState = { ...voiceState, ...(req.body ?? {}), at: new Date().toISOString() };
+  res.json({ ok: true });
+});
+
+app.post("/api/voice/metric", async (req, res) => {
+  await logMetric({ kind: "voice", ...(req.body ?? {}) });
+  res.json({ ok: true });
+});
 
 app
   .listen(PORT, () => console.log(`mirror server on http://localhost:${PORT}`))

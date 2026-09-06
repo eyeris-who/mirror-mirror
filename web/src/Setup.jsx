@@ -141,6 +141,108 @@ function LocationSetting() {
   );
 }
 
+function AssistantSetting({ status }) {
+  const [a, setA] = useState(null);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((s) => setA(s.assistant))
+      .catch(() => {});
+  }, []);
+
+  if (!a) return null;
+
+  const set = (k) => (e) => setA({ ...a, [k]: e.target.value });
+
+  const save = () => {
+    setMsg(null);
+    fetch("/api/settings/assistant", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        wakePhrase: a.wakePhrase,
+        userName: a.userName,
+        morningPlaylist: a.morningPlaylist,
+        units: a.units,
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((saved) => {
+        setA(saved);
+        setMsg("saved — restart the voice service if you changed the wake phrase");
+      })
+      .catch(() => setMsg("could not save"));
+  };
+
+  const asst = status.assistant ?? {};
+
+  return (
+    <div className="setup__row setup__row--stack">
+      <span className="setup__name">Voice assistant</span>
+
+      <label className="setup__field">
+        <span>Wake phrase</span>
+        <input
+          className="setup__input"
+          value={a.wakePhrase ?? ""}
+          onChange={set("wakePhrase")}
+        />
+      </label>
+      <label className="setup__field">
+        <span>Call me</span>
+        <input
+          className="setup__input"
+          value={a.userName ?? ""}
+          onChange={set("userName")}
+          placeholder="(your name)"
+        />
+      </label>
+      <label className="setup__field">
+        <span>Morning playlist</span>
+        <input
+          className="setup__input"
+          value={a.morningPlaylist ?? ""}
+          onChange={set("morningPlaylist")}
+          placeholder="Spotify playlist name"
+        />
+      </label>
+      <label className="setup__field">
+        <span>Units</span>
+        <select
+          className="setup__input"
+          value={a.units ?? "fahrenheit"}
+          onChange={set("units")}
+        >
+          <option value="fahrenheit">Fahrenheit</option>
+          <option value="celsius">Celsius</option>
+        </select>
+      </label>
+
+      <div className="setup__models">
+        <span>
+          Local model (Ollama):{" "}
+          <b className={asst.localReachable ? "setup__ok" : ""}>
+            {asst.localReachable ? "reachable" : "not running"}
+          </b>
+        </span>
+        <span>
+          Cloud model (Claude):{" "}
+          <b className={asst.cloudConfigured ? "setup__ok" : ""}>
+            {asst.cloudConfigured ? "key set" : "no API key"}
+          </b>
+        </span>
+      </div>
+
+      <div>
+        <button onClick={save}>Save</button>
+      </div>
+      {msg && <span className="setup__hint">{msg}</span>}
+    </div>
+  );
+}
+
 export default function Setup() {
   const [status, setStatus] = useState(null);
 
@@ -161,6 +263,7 @@ export default function Setup() {
       <h1>Mirror setup</h1>
 
       <LocationSetting />
+      <AssistantSetting status={status} />
 
       <Row
         name="Google Calendar"

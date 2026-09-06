@@ -3,4 +3,7 @@ dist/
 server/.env
 server/data/tokens.json
 server/data/settings.json
+server/data/metrics.jsonl
+voice/.venv/
+voice/__pycache__/
 *.log

@@ -1,0 +1,12 @@
+# Python 3.10–3.14.
+#   python -m venv .venv
+#   .venv\Scripts\Activate.ps1
+#   pip install -r requirements.txt
+# If a build fails asking for "Microsoft Visual C++", that package has no wheel
+# for your Python — recreate the venv with:  py -3.12 -m venv .venv
+
+faster-whisper>=1.0.3   # speech-to-text (CTranslate2, runs on CPU)
+sounddevice>=0.4.6      # microphone capture (bundles PortAudio)
+numpy>=1.24
+pyttsx3>=2.90           # text-to-speech (offline; SAPI5 on Windows)
+requests>=2.31

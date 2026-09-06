@@ -1,7 +1,7 @@
 import { describeCode } from "./weatherCodes.js";
 import { getSettings } from "./settings.js";
 
-const { TEMPERATURE_UNIT = "fahrenheit", FORECAST_DAYS = "7" } = process.env;
+const { FORECAST_DAYS = "7" } = process.env;
 
 // Cache so we never hammer the API and the mirror still shows something
 // if the network blips. Keyed by location so it clears when the user moves.
@@ -14,7 +14,7 @@ export function clearCache() {
 
 const DOW = new Intl.DateTimeFormat("en-US", { weekday: "short" });
 
-function buildUrl(location) {
+function buildUrl(location, units) {
   const u = new URL("https://api.open-meteo.com/v1/forecast");
   u.searchParams.set("latitude", location.latitude);
   u.searchParams.set("longitude", location.longitude);
@@ -22,21 +22,22 @@ function buildUrl(location) {
     "daily",
     "weather_code,temperature_2m_max,temperature_2m_min",
   );
-  u.searchParams.set("temperature_unit", TEMPERATURE_UNIT);
+  u.searchParams.set("temperature_unit", units);
   u.searchParams.set("timezone", "auto");
   u.searchParams.set("forecast_days", FORECAST_DAYS);
   return u.toString();
 }
 
 export async function getWeather() {
-  const { location } = await getSettings();
-  const key = `${location.latitude},${location.longitude}`;
+  const { location, assistant } = await getSettings();
+  const units = assistant?.units === "celsius" ? "celsius" : "fahrenheit";
+  const key = `${location.latitude},${location.longitude},${units}`;
 
   if (cache.data && cache.key === key && Date.now() - cache.at < TTL_MS) {
     return cache.data;
   }
 
-  const res = await fetch(buildUrl(location));
+  const res = await fetch(buildUrl(location, units));
   if (!res.ok) throw new Error(`Open-Meteo ${res.status}`);
   const raw = await res.json();
 

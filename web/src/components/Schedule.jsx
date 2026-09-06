@@ -21,7 +21,7 @@ export default function Schedule() {
 
   return (
     <div className="schedule">
-      <h2 className="schedule__title">Today</h2>
+      <h2 className="schedule__title">Today's Events</h2>
       {events.length === 0 && (
         <div className="schedule--muted">Nothing scheduled</div>
       )}

@@ -6,19 +6,51 @@ import * as googleCal from "./google.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const DATA_FILE = join(here, "data", "schedule.json");
 
+/** Start/end Date pair for a named range, in local time. */
+export function windowFor(range = "today") {
+  const now = new Date();
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
+  const start = new Date(startOfToday);
+  const end = new Date(startOfToday);
+
+  if (range === "tomorrow") {
+    start.setDate(start.getDate() + 1);
+    end.setDate(end.getDate() + 2);
+  } else if (range === "week") {
+    end.setDate(end.getDate() + 7);
+  } else {
+    end.setDate(end.getDate() + 1); // today
+  }
+  return { start, end };
+}
+
 /**
- * Today's events, sorted by start time:
+ * Events for a range ("today" | "tomorrow" | "week"), sorted by start time:
  *   [{ id, title, start: ISO, end: ISO|null, allDay: bool, location: string|null }]
  *
- * Uses Google Calendar once connected; otherwise falls back to the local
- * schedule.json sample file so the UI still has something to render.
+ * Google Calendar once connected; otherwise the local sample file.
  */
-export async function getSchedule() {
-  if (await googleCal.isConnected()) {
-    const events = await googleCal.getTodayEvents();
-    return sortToday(events);
-  }
-  return sortToday(await readLocal());
+export async function getEvents(range = "today") {
+  const { start, end } = windowFor(range);
+  const events = (await googleCal.isConnected())
+    ? await googleCal.getEvents(start, end)
+    : await readLocal();
+
+  return events
+    .filter((e) => {
+      const s = new Date(e.start);
+      return s >= start && s < end;
+    })
+    .sort((a, b) => new Date(a.start) - new Date(b.start));
+}
+
+/** Back-compat: today's events, for GET /api/schedule. */
+export function getSchedule() {
+  return getEvents("today");
 }
 
 async function readLocal() {
@@ -31,18 +63,4 @@ async function readLocal() {
     start: new Date(r.start).toISOString(),
     end: r.end ? new Date(r.end).toISOString() : null,
   }));
-}
-
-function sortToday(events) {
-  const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfDay = new Date(startOfDay);
-  endOfDay.setDate(endOfDay.getDate() + 1);
-
-  return events
-    .filter((e) => {
-      const s = new Date(e.start);
-      return s >= startOfDay && s < endOfDay;
-    })
-    .sort((a, b) => new Date(a.start) - new Date(b.start));
 }
