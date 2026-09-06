@@ -1,4 +1,6 @@
 node_modules/
 dist/
 server/.env
+server/data/tokens.json
+server/data/settings.json
 *.log

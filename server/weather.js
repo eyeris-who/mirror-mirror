@@ -1,76 +1,68 @@
 import { describeCode } from "./weatherCodes.js";
+import { getSettings } from "./settings.js";
 
-const {
-  LATITUDE = "40.7128",
-  LONGITUDE = "-74.0060",
-  FORECAST_HOUR = "18",
-  TEMPERATURE_UNIT = "fahrenheit",
-} = process.env;
+const { TEMPERATURE_UNIT = "fahrenheit", FORECAST_DAYS = "7" } = process.env;
 
-const forecastHour = Number(FORECAST_HOUR);
+// Cache so we never hammer the API and the mirror still shows something
+// if the network blips. Keyed by location so it clears when the user moves.
+let cache = { at: 0, key: "", data: null };
+const TTL_MS = 30 * 60 * 1000; // 30 minutes
 
-// Simple in-memory cache so we never hammer the API (and the mirror still
-// shows something if the network blips).
-let cache = { at: 0, data: null };
-const TTL_MS = 10 * 60 * 1000; // 10 minutes
+export function clearCache() {
+  cache = { at: 0, key: "", data: null };
+}
 
-function buildUrl() {
+const DOW = new Intl.DateTimeFormat("en-US", { weekday: "short" });
+
+function buildUrl(location) {
   const u = new URL("https://api.open-meteo.com/v1/forecast");
-  u.searchParams.set("latitude", LATITUDE);
-  u.searchParams.set("longitude", LONGITUDE);
-  u.searchParams.set("current", "temperature_2m,weather_code,is_day");
-  u.searchParams.set("hourly", "temperature_2m,weather_code");
+  u.searchParams.set("latitude", location.latitude);
+  u.searchParams.set("longitude", location.longitude);
+  u.searchParams.set(
+    "daily",
+    "weather_code,temperature_2m_max,temperature_2m_min",
+  );
   u.searchParams.set("temperature_unit", TEMPERATURE_UNIT);
   u.searchParams.set("timezone", "auto");
-  u.searchParams.set("forecast_days", "2");
+  u.searchParams.set("forecast_days", FORECAST_DAYS);
   return u.toString();
 }
 
-function pickForecastSlot(hourly) {
-  // hourly.time is an array of local ISO strings like "2026-09-06T18:00".
-  const now = new Date();
-  const target = new Date(now);
-  target.setHours(forecastHour, 0, 0, 0);
-  const label = target > now ? "later today" : "tomorrow";
-  if (target <= now) target.setDate(target.getDate() + 1);
-
-  const wantPrefix =
-    `${target.getFullYear()}-` +
-    `${String(target.getMonth() + 1).padStart(2, "0")}-` +
-    `${String(target.getDate()).padStart(2, "0")}T` +
-    `${String(forecastHour).padStart(2, "0")}:00`;
-
-  const idx = hourly.time.findIndex((t) => t.startsWith(wantPrefix));
-  if (idx === -1) return null;
-  const code = hourly.weather_code[idx];
-  return {
-    label,
-    hour: forecastHour,
-    time: hourly.time[idx],
-    temperature: Math.round(hourly.temperature_2m[idx]),
-    ...describeCode(code),
-  };
-}
-
 export async function getWeather() {
-  if (cache.data && Date.now() - cache.at < TTL_MS) return cache.data;
+  const { location } = await getSettings();
+  const key = `${location.latitude},${location.longitude}`;
 
-  const res = await fetch(buildUrl());
+  if (cache.data && cache.key === key && Date.now() - cache.at < TTL_MS) {
+    return cache.data;
+  }
+
+  const res = await fetch(buildUrl(location));
   if (!res.ok) throw new Error(`Open-Meteo ${res.status}`);
   const raw = await res.json();
 
-  const currentCode = raw.current.weather_code;
+  const d = raw.daily;
+  const days = d.time.map((date, i) => {
+    const dt = new Date(`${date}T12:00:00`); // local noon, avoids TZ edge cases
+    return {
+      date, // "YYYY-MM-DD"
+      day: i === 0 ? "Today" : DOW.format(dt), // "Mon", "Tue", ...
+      high: Math.round(d.temperature_2m_max[i]),
+      low: Math.round(d.temperature_2m_min[i]),
+      ...describeCode(d.weather_code[i]), // { text, icon }
+    };
+  });
+
   const data = {
-    unit: raw.current_units?.temperature_2m ?? "°",
-    current: {
-      temperature: Math.round(raw.current.temperature_2m),
-      isDay: raw.current.is_day === 1,
-      ...describeCode(currentCode),
+    unit: raw.daily_units?.temperature_2m_max ?? "°",
+    place: {
+      name: location.name,
+      admin1: location.admin1,
+      country: location.country,
     },
-    forecast: pickForecastSlot(raw.hourly),
+    days,
     updatedAt: new Date().toISOString(),
   };
 
-  cache = { at: Date.now(), data };
+  cache = { at: Date.now(), key, data };
   return data;
 }

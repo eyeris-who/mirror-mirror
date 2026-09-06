@@ -1,17 +1,23 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { getWeather } from "./weather.js";
+import { getWeather, clearCache as clearWeatherCache } from "./weather.js";
 import { getSchedule } from "./schedule.js";
+import { getSettings, setLocation } from "./settings.js";
+import * as geo from "./geo.js";
+import * as google from "./google.js";
+import * as spotify from "./spotify.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
 
 app.use(cors());
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
+// ---- data --------------------------------------------------------------
 app.get("/api/weather", async (_req, res) => {
   try {
     res.json(await getWeather());
@@ -30,12 +36,161 @@ app.get("/api/schedule", async (_req, res) => {
   }
 });
 
-// --- Where the voice layer plugs in later -----------------------------------
+// ---- location settings ----------------------------------------------
+app.get("/api/settings", async (_req, res) => {
+  res.json(await getSettings());
+});
+
+app.put("/api/settings/location", async (req, res) => {
+  const loc = req.body ?? {};
+  if (!Number.isFinite(loc.latitude) || !Number.isFinite(loc.longitude)) {
+    return res.status(400).json({ error: "bad_location" });
+  }
+  try {
+    const saved = await setLocation(loc);
+    clearWeatherCache();
+    res.json(saved);
+  } catch (err) {
+    console.error("settings:", err.message);
+    res.status(500).json({ error: "save_failed" });
+  }
+});
+
+app.get("/api/geo/search", async (req, res) => {
+  try {
+    res.json({ results: await geo.search(String(req.query.q ?? "")) });
+  } catch (err) {
+    console.error("geo search:", err.message);
+    res.status(502).json({ error: "geocoding_unavailable" });
+  }
+});
+
+app.get("/api/geo/reverse", async (req, res) => {
+  try {
+    res.json(await geo.reverse(Number(req.query.lat), Number(req.query.lon)));
+  } catch (err) {
+    console.error("geo reverse:", err.message);
+    res.status(502).json({ error: "reverse_geocoding_unavailable" });
+  }
+});
+
+// ---- connection status (drives the setup page) ------------------------
+app.get("/api/status", async (_req, res) => {
+  res.json({
+    google: {
+      configured: google.isConfigured(),
+      connected: await google.isConnected(),
+    },
+    spotify: {
+      configured: spotify.isConfigured(),
+      connected: await spotify.isConnected(),
+    },
+  });
+});
+
+// ---- Google OAuth ----------------------------------------------------
+app.get("/api/auth/google", (_req, res) => {
+  if (!google.isConfigured())
+    return res.status(400).send("Google not configured — see server/.env");
+  res.redirect(google.authUrl());
+});
+
+app.get("/api/auth/google/callback", async (req, res) => {
+  try {
+    await google.handleCallback(req.query.code);
+    res.redirect(`${WEB_ORIGIN}/setup?google=connected`);
+  } catch (err) {
+    console.error("google callback:", err.message);
+    res.redirect(`${WEB_ORIGIN}/setup?google=error`);
+  }
+});
+
+app.post("/api/auth/google/disconnect", async (_req, res) => {
+  await google.disconnect();
+  res.json({ ok: true });
+});
+
+// ---- Spotify OAuth -------------------------------------------------
+app.get("/api/auth/spotify", (_req, res) => {
+  if (!spotify.isConfigured())
+    return res.status(400).send("Spotify not configured — see server/.env");
+  res.redirect(spotify.authUrl());
+});
+
+app.get("/api/auth/spotify/callback", async (req, res) => {
+  try {
+    await spotify.handleCallback(req.query.code);
+    res.redirect(`${WEB_ORIGIN}/setup?spotify=connected`);
+  } catch (err) {
+    console.error("spotify callback:", err.message);
+    res.redirect(`${WEB_ORIGIN}/setup?spotify=error`);
+  }
+});
+
+app.post("/api/auth/spotify/disconnect", async (_req, res) => {
+  await spotify.disconnect();
+  res.json({ ok: true });
+});
+
+// ---- Spotify playback --------------------------------------------
+// Browser needs a short-lived token for the Web Playback SDK.
+app.get("/api/spotify/token", async (_req, res) => {
+  try {
+    res.json({ token: await spotify.getAccessToken() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/api/spotify/now-playing", async (_req, res) => {
+  try {
+    res.json(await spotify.nowPlaying());
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+const control = (fn) => async (req, res) => {
+  try {
+    await fn(req);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("spotify control:", err.message);
+    res.status(400).json({ error: err.message });
+  }
+};
+
+app.post("/api/spotify/play", control((req) => spotify.play(req.body ?? {})));
+app.post("/api/spotify/pause", control(() => spotify.pause()));
+app.post("/api/spotify/next", control(() => spotify.next()));
+app.post("/api/spotify/previous", control(() => spotify.previous()));
+app.post(
+  "/api/spotify/transfer",
+  control((req) => spotify.transfer(req.body.deviceId, req.body.play ?? true)),
+);
+app.post(
+  "/api/spotify/play-search",
+  control((req) => spotify.playSearch(req.body.query, req.body.type)),
+);
+
+// --- Where the voice layer plugs in later ----------------------------
 // app.post("/api/command", async (req, res) => {
-//   const { text } = req.body;              // transcript from Whisper
-//   const result = await routeCommand(text); // LLM + tool calling
+//   const { text } = req.body;                // transcript from Whisper
+//   const result = await routeCommand(text);  // LLM picks weather / calendar / spotify
 //   res.json(result);
 // });
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------
 
-app.listen(PORT, () => console.log(`mirror server on http://localhost:${PORT}`));
+app
+  .listen(PORT, () => console.log(`mirror server on http://localhost:${PORT}`))
+  .on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `\nPort ${PORT} is already in use — another mirror server (or a ` +
+          `leftover one) is running.\nWindows: npx kill-port ${PORT}   ` +
+          `then re-run npm run dev\n`,
+      );
+      process.exit(1);
+    }
+    throw err;
+  });
