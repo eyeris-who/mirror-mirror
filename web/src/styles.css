@@ -1,0 +1,129 @@
+/* Smart-mirror look: pure black background, white text, generous spacing.
+   Black pixels read as "no light" through a two-way mirror = invisible. */
+
+:root {
+  --fg: #f4f4f4;
+  --fg-dim: #8a8a8a;
+  --gap: clamp(1rem, 4vw, 3rem);
+  font-family: "Helvetica Neue", Arial, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: #000;
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mirror {
+  height: 100%;
+  padding: var(--gap);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gap);
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.col--right {
+  text-align: right;
+  align-items: flex-end;
+}
+
+/* ---- date / time ---- */
+.datetime__time {
+  font-size: clamp(3rem, 12vw, 7rem);
+  font-weight: 300;
+  line-height: 1;
+}
+.datetime__date {
+  font-size: clamp(1rem, 3vw, 1.75rem);
+  color: var(--fg-dim);
+  margin-top: 0.25em;
+}
+
+/* ---- weather ---- */
+.weather {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  font-size: clamp(1rem, 3vw, 1.6rem);
+  font-weight: 300;
+}
+.weather__line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+}
+.weather__glyph {
+  font-size: 1.2em;
+}
+.weather__temp {
+  font-weight: 400;
+}
+.weather__text {
+  color: var(--fg-dim);
+}
+.weather--muted {
+  color: var(--fg-dim);
+}
+
+/* ---- schedule ---- */
+.schedule {
+  font-weight: 300;
+}
+.schedule__title {
+  font-size: clamp(1rem, 3vw, 1.5rem);
+  font-weight: 400;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin-bottom: 0.75em;
+}
+.schedule__list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9em;
+}
+.schedule__item {
+  display: flex;
+  gap: 1em;
+  justify-content: flex-end;
+  font-size: clamp(0.95rem, 2.6vw, 1.4rem);
+}
+.schedule__item--past {
+  opacity: 0.35;
+}
+.schedule__time {
+  color: var(--fg-dim);
+  white-space: nowrap;
+  min-width: 5.5em;
+  text-align: right;
+}
+.schedule__body {
+  display: flex;
+  flex-direction: column;
+}
+.schedule__loc {
+  color: var(--fg-dim);
+  font-size: 0.8em;
+}
+.schedule--muted {
+  color: var(--fg-dim);
+}
