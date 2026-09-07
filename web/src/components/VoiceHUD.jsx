@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { usePolling } from "../hooks/usePolling.js";
 
 const TIER = {
@@ -15,6 +16,17 @@ const STATUS = {
 /** Bottom overlay that shows what the voice assistant is doing. Hidden at idle. */
 export default function VoiceHUD() {
   const { data } = usePolling("/api/voice/state", 1000);
+  const lastAction = useRef("");
+
+  // e.g. free Spotify account: "play my playlist" opens the playlist page.
+  useEffect(() => {
+    const a = data?.action;
+    if (a?.type === "open_url" && a.url && a.url !== lastAction.current) {
+      lastAction.current = a.url;
+      window.open(a.url, "_blank", "noopener");
+    }
+  }, [data?.action]);
+
   const state = data?.state;
   if (!state || state === "idle") return null;
 

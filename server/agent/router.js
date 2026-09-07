@@ -31,8 +31,54 @@ function tier0(text) {
   if (/\bset ?up\b|configure( the)? (mirror|assistant)|change (my )?settings/.test(t))
     return { tier: 0, tool: "open_setup" };
 
-  if (/play (my |the )?.*(playlist|music)|morning playlist|put on (some )?music/.test(t))
+  // --- music transport (check before "play …") ---
+  if (/^(pause|stop)( the| this)?( music| song| playback| track)?[.!]?$/.test(t))
+    return { tier: 0, tool: "pause_music" };
+  if (/^(resume|unpause|continue|keep playing)( the| it)?( music| song| playback)?[.!]?$/.test(t))
+    return { tier: 0, tool: "resume_music" };
+  if (/^(next|skip)( song| track| this)?[.!]?$|skip (this|the) (song|track)|next one/.test(t))
+    return { tier: 0, tool: "next_track" };
+  if (/^(previous|prev|back|go back|last)( song| track| one)?[.!]?$|previous (song|track)|go back a (song|track)|restart (the |this )?(song|track)/.test(t))
+    return { tier: 0, tool: "previous_track" };
+  if (/what('?s| is) (playing|this( song)?)|what song is this|who('?s| is) (this|singing)|name of this song/.test(t))
+    return { tier: 0, tool: "whats_playing" };
+
+  // trending / charts (check before generic "play X")
+  {
+    const tr = t.match(
+      /\bplay\b (?:me |us )?(?:the |some )?(?:(?:top|trending|popular|hot|hits?|charts?|best)\b|what'?s (?:trending|popular|hot|charting))(.*)$/,
+    );
+    if (tr) {
+      const genre = (tr[1] || "")
+        .replace(
+          /\b(tracks?|songs?|music|hits?|right now|today|now|on audius|please|for me|of|in|on|the|charts?)\b/g,
+          "",
+        )
+        .replace(/[.!?]/g, "")
+        .trim();
+      return { tier: 0, tool: "play_trending", args: genre ? { genre } : {} };
+    }
+  }
+
+  // saved morning playlist
+  if (/play (my )?(morning )?(playlist|mix|music)$|my morning playlist|put on (some )?music|start (the )?music/.test(t))
     return { tier: 0, tool: "play_playlist", args: {} };
+
+  // "play X" — X can be a playlist name, genre, mood, artist
+  {
+    const m = t.match(
+      /(?:^|\b)play (?:me |us )?(?:some )?(.+?)(?:\s+(?:music|playlist|please|for me))?[.!]?$/,
+    );
+    if (m && m[1]) {
+      const raw = m[1].replace(/^(my|the|a)\s+/, "").trim();
+      const generic = /^(music|playlist|something|tunes|songs?|anything)$/.test(raw);
+      return {
+        tier: 0,
+        tool: "play_playlist",
+        args: generic ? {} : { name: raw },
+      };
+    }
+  }
 
   if (/what('?s| is) the time|what time is it|the current time|tell me the time/.test(t))
     return { tier: 0, tool: "get_time" };

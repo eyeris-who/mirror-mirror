@@ -11,8 +11,8 @@ hides API keys and normalizes data.
 | Backend | Node + Express | Hides keys, reshapes API responses, hosts the future voice layer. |
 | Weather | Open-Meteo | Free, no key, 7-day daily forecast. |
 | Calendar | Google Calendar API (OAuth) | Real schedule; falls back to `server/data/schedule.json` until connected. |
-| Music | Spotify Web API + Web Playback SDK | Now-playing display; laptop becomes a "Smart Mirror" Spotify speaker. |
-| Voice | Python service (`voice/`) + hybrid router | faster-whisper STT, pyttsx3 TTS; router picks rules / local model / Claude. |
+| Music | Spotify (Premium) with **Audius** fallback | Spotify if a Premium account is linked; otherwise Audius (free, keyless, full tracks) streamed by the mirror page. Queue / skip / back / progress, voice-controlled. |
+| Voice | Python service (`voice/`) + hybrid router | faster-whisper STT, Windows SAPI TTS; router picks rules / local model / Claude. |
 
 The browser only ever calls `/api/*` on the Express server. The voice service
 also only calls `/api/*` — it has no knowledge of weather, calendars, etc.
@@ -79,33 +79,58 @@ npm run dev
 6. Open http://localhost:5173/setup → **connect** next to Google Calendar →
    approve. Tokens are saved to `server/data/tokens.json` (gitignored).
 
-## Connecting Spotify
+## Music
 
-Playback needs a **Spotify Premium** account.
+Two sources, picked automatically:
+
+- **Spotify** — used only when a **Premium** account is linked. Free accounts
+  cannot stream through the Web API at all (not full tracks, not previews), so
+  the connect flow checks `product` and **rejects a Free account** with a
+  warning. Premium playback uses Spotify Connect + the Web Playback SDK (the
+  mirror shows up as a device called "Smart Mirror").
+- **Audius** (default) — free, no key, full-length tracks from independent
+  artists. The mirror page streams them through a plain `<audio>` element. Used
+  whenever Spotify isn't a linked Premium account. Set a genre / mood / artist
+  as your "Morning music" on `/setup` (e.g. `lofi`, `jazz`, `acoustic`).
+  `"play trending [genre]"` pulls Audius's trending chart instead of a keyword
+  search — usually better picks. Audius catalog is indie/electronic-heavy;
+  no major-label artists.
+
+The player (queue, history, skip, back, real progress bar) works the same for
+both — `/api/music/*` routes to whichever source is active.
+
+### Music voice commands
+
+| Say | Does |
+|---|---|
+| "play lofi" / "play jazz" / "play &lt;anything&gt;" | search that on the active source, queue it |
+| "play trending" / "play trending techno" / "play the top lofi tracks" | Audius trending chart, optionally by genre (better picks than search) |
+| "play my morning playlist" | your saved morning playlist / query |
+| "pause" · "resume" | pause / resume |
+| "next" · "skip" | next track |
+| "back" · "previous" · "go back" | restart the track, or previous if it just started |
+| "what's playing" | says the track and artist |
+
+### Connecting Spotify (Premium only)
 
 1. https://developer.spotify.com/dashboard → **Create app**.
-2. In the app settings, add Redirect URI:
-   `http://localhost:3001/api/auth/spotify/callback`
-   (also add `http://127.0.0.1:3001/api/auth/spotify/callback` — Spotify is
-   picky about the two being distinct).
+2. In the app settings, add exactly this Redirect URI:
+   `http://127.0.0.1:3001/api/auth/spotify/callback`
+   Spotify **rejects `localhost`** (as of April 2025) — it must be the loopback
+   IP `127.0.0.1`. This has to match `SPOTIFY_REDIRECT_URI` in `server/.env`
+   character-for-character.
 3. Under **APIs used**, select **Web API** and **Web Playback SDK**.
-4. Copy the Client ID + Client Secret into `server/.env`. Restart the server.
-5. http://localhost:5173/setup → **connect** next to Spotify → approve.
-6. The mirror registers itself as a Spotify Connect device named
-   **Smart Mirror**. Start playback on it from:
-   - the Spotify app (Devices → Smart Mirror), or
-   - `POST /api/spotify/play-search { "query": "morning coffee", "type": "playlist" }`, or
-   - the voice layer later.
-
-### Playback endpoints
-
-| Method | Path | Body |
-|---|---|---|
-| GET | `/api/spotify/now-playing` | — |
-| POST | `/api/spotify/play` | `{}` or `{ "uris": [...] }` or `{ "contextUri": "spotify:playlist:..." }` |
-| POST | `/api/spotify/pause` `/next` `/previous` | — |
-| POST | `/api/spotify/play-search` | `{ "query": "...", "type": "playlist" | "track" }` |
-| POST | `/api/spotify/transfer` | `{ "deviceId": "...", "play": true }` |
+4. **User Management** tab → add yourself: your name + the **email on your
+   Spotify account**. New apps are in *Development mode*, where only listed users
+   can call the API — without this every request returns
+   `403 The user is not registered for this application`.
+5. Copy the Client ID + Client Secret into `server/.env`. Restart the server.
+6. http://localhost:5173/setup → **connect** next to Spotify → approve.
+   (You'll briefly land on a `127.0.0.1:3001` page mid-redirect — that's normal.)
+   If you connected before adding yourself in step 4, click **disconnect** then
+   **connect** again. A Free account is rejected here with a warning.
+7. Once connected (Premium), pick your morning playlist from the dropdown on
+   `/setup`.
 
 ## Voice assistant
 
@@ -143,7 +168,7 @@ voice-service restart.
 | "what's the time" / "what's the date" | speaks it |
 | "what's the weather" / "…tomorrow" / "…this week" | current, next day, or 7-day |
 | "what's on my schedule today / tomorrow / this week" | calendar events for the range |
-| "play my morning playlist" | plays the saved Spotify playlist |
+| "play my morning playlist" · "play lofi" · "pause" · "next" · "back" · "what's playing" | music (see the Music section) |
 | "start my morning routine" | date → time → weather → today's events → playlist |
 | "setup" | spoken questionnaire |
 
@@ -153,9 +178,10 @@ voice-service restart.
 |---|---|---|---|
 | Weather | Open-Meteo + BigDataCloud | none | free |
 | Calendar | Google Calendar API | OAuth (browser, one-time) | free |
-| Music | Spotify Web API + Playback SDK | OAuth (browser) + **Premium** | free API, paid account |
+| Music (default) | Audius | none | free |
+| Music (if linked) | Spotify Web API + Playback SDK | OAuth (browser) + **Premium** | free API, paid account |
 | Speech-to-text | faster-whisper | none (downloads model weights) | free, local |
-| Text-to-speech | pyttsx3 (OS voice) | none | free, local |
+| Text-to-speech | Windows SAPI (`pyttsx3` elsewhere) | none | free, local |
 | Wake word | transcribe-and-match (default) | none | free, local |
 | Local model tier | Ollama + a pulled model | none | free, local |
 | Cloud model tier | Claude (`ANTHROPIC_API_KEY`) | API key | per-token, **only tier 2** |

@@ -20,7 +20,8 @@ const DEFAULTS = {
     wakePhrase: process.env.WAKE_PHRASE || "mirror mirror on the wall",
     ackPhrase: "Hmm?",
     userName: "",
-    morningPlaylist: "",
+    morningPlaylist: "", // display name
+    morningPlaylistId: "", // Spotify playlist id (set when picked from the list)
     units: process.env.TEMPERATURE_UNIT || "fahrenheit", // "celsius" | "fahrenheit"
     // Ordered steps for "start my morning routine".
     morningRoutine: ["date", "time", "weather", "events", "playlist"],

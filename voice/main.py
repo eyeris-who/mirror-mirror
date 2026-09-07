@@ -107,6 +107,7 @@ def main():
             transcript=command,
             response=reply.get("speak", ""),
             tier=reply.get("tier"),
+            action=reply.get("action"),
         )
         t_tts = time.time()
         speak_reply(voice, reply)

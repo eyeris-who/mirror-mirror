@@ -7,6 +7,9 @@ import { getSettings, setLocation, updateAssistant } from "./settings.js";
 import * as geo from "./geo.js";
 import * as google from "./google.js";
 import * as spotify from "./spotify.js";
+import * as audius from "./audius.js";
+import * as musicctl from "./musicctl.js";
+import * as player from "./player.js";
 import * as llm from "./agent/llm.js";
 import { handleCommand } from "./agent/index.js";
 import { logMetric } from "./agent/metrics.js";
@@ -98,7 +101,9 @@ app.get("/api/status", async (_req, res) => {
     spotify: {
       configured: spotify.isConfigured(),
       connected: await spotify.isConnected(),
+      premium: (await spotify.isConnected()) && (await spotify.isPremium()),
     },
+    music: { source: await musicctl.activeSource() },
     assistant: {
       cloudConfigured: llm.cloudConfigured(),
       localReachable: await llm.localAvailable(),
@@ -138,6 +143,12 @@ app.get("/api/auth/spotify", (_req, res) => {
 app.get("/api/auth/spotify/callback", async (req, res) => {
   try {
     await spotify.handleCallback(req.query.code);
+    // Free accounts can't stream through the API — reject the connection.
+    const profile = await spotify.me().catch(() => null);
+    if (!profile || profile.product !== "premium") {
+      await spotify.disconnect();
+      return res.redirect(`${WEB_ORIGIN}/setup?spotify=free`);
+    }
     res.redirect(`${WEB_ORIGIN}/setup?spotify=connected`);
   } catch (err) {
     console.error("spotify callback:", err.message);
@@ -168,6 +179,21 @@ app.get("/api/spotify/now-playing", async (_req, res) => {
   }
 });
 
+app.get("/api/spotify/playlists", async (req, res) => {
+  try {
+    const all = await spotify.listPlaylists();
+    const q = String(req.query.q ?? "").trim().toLowerCase();
+    res.json({
+      playlists: q
+        ? all.filter((p) => p.name.toLowerCase().includes(q))
+        : all,
+    });
+  } catch (err) {
+    console.error("spotify playlists:", err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 const control = (fn) => async (req, res) => {
   try {
     await fn(req);
@@ -191,6 +217,46 @@ app.post(
   control((req) => spotify.playSearch(req.body.query, req.body.type)),
 );
 
+// ---- music (source-agnostic: Spotify Premium OR Audius) -------------
+app.get("/api/music/state", async (_req, res) => {
+  res.json(await musicctl.state());
+});
+
+app.post("/api/music/play", async (req, res) => {
+  try {
+    res.json(await musicctl.play(req.body ?? {}));
+  } catch (err) {
+    console.error("music play:", err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+const mctl = (fn) => async (_req, res) => {
+  try {
+    res.json((await fn()) ?? { ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+app.post("/api/music/pause", mctl(() => musicctl.pause()));
+app.post("/api/music/resume", mctl(() => musicctl.resume()));
+app.post("/api/music/next", mctl(() => musicctl.next()));
+app.post("/api/music/previous", mctl(() => musicctl.previous()));
+
+// Audius only: the mirror page reports its real <audio> position here.
+app.post("/api/music/report", (req, res) => {
+  res.json(player.report(req.body ?? {}));
+});
+
+// Preview Audius results (for the setup page when Spotify isn't the source).
+app.get("/api/music/audius/search", async (req, res) => {
+  try {
+    res.json({ tracks: await audius.search(String(req.query.q ?? ""), 10) });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ---- voice / assistant ---------------------------------------------
 // Per-caller conversation state (just an in-progress setup flow for now).
 const sessions = new Map();
@@ -209,6 +275,7 @@ app.post("/api/command", async (req, res) => {
     res.json({
       speak: out.speak,
       segments: out.segments,
+      action: out.action,
       expectReply: out.expectReply,
       tier: out.tier,
     });

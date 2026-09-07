@@ -47,6 +47,7 @@ export async function handleCommand(text, session = {}) {
   return {
     speak: result.speak,
     segments: result.segments ?? null,
+    action: result.action ?? null,
     expectReply: Boolean(result.expectReply),
     setup: result.setup ?? null,
     tier: routed.tier ?? -1,

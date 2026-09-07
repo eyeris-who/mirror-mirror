@@ -1,22 +1,27 @@
 import { useEffect, useState } from "react";
 
-function Row({ name, state, onConnect, onDisconnect }) {
+function Row({ name, state, onConnect, onDisconnect, note }) {
   const { configured, connected } = state;
   return (
-    <div className="setup__row">
-      <span className="setup__name">{name}</span>
-      {!configured && (
-        <span className="setup__hint">
-          add credentials to <code>server/.env</code>, then restart the server
-        </span>
-      )}
-      {configured && connected && (
-        <>
-          <span className="setup__ok">connected</span>
-          <button onClick={onDisconnect}>disconnect</button>
-        </>
-      )}
-      {configured && !connected && <button onClick={onConnect}>connect</button>}
+    <div className="setup__row setup__row--stack">
+      <div className="setup__loc-head">
+        <span className="setup__name">{name}</span>
+        {!configured && (
+          <span className="setup__hint">
+            add credentials to <code>server/.env</code>, then restart the server
+          </span>
+        )}
+        {configured && connected && (
+          <span>
+            <span className="setup__ok">connected</span>{" "}
+            <button onClick={onDisconnect}>disconnect</button>
+          </span>
+        )}
+        {configured && !connected && (
+          <button onClick={onConnect}>connect</button>
+        )}
+      </div>
+      {note && <span className="setup__hint">{note}</span>}
     </div>
   );
 }
@@ -141,6 +146,80 @@ function LocationSetting() {
   );
 }
 
+function PlaylistPicker({ connected, value, onPick }) {
+  const [all, setAll] = useState(null);
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!connected) return;
+    fetch("/api/spotify/playlists")
+      .then((r) => r.json())
+      .then((d) => setAll(d.playlists ?? []))
+      .catch(() => setAll([]));
+  }, [connected]);
+
+  if (!connected) {
+    return (
+      <div className="setup__field setup__field--stack">
+        <span>Morning music</span>
+        <div style={{ flex: 1 }}>
+          <input
+            className="setup__input"
+            value={value ?? ""}
+            onChange={(e) => onPick({ name: e.target.value, id: "" })}
+            placeholder="a genre, mood or artist — e.g. lofi, jazz, acoustic"
+          />
+          <div className="setup__hint">
+            played from Audius (free). Link a Spotify Premium account above to use
+            your own playlists instead.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const shown = (all ?? []).filter((p) =>
+    p.name.toLowerCase().includes(q.trim().toLowerCase()),
+  );
+
+  return (
+    <div className="setup__field setup__field--stack">
+      <span>Morning playlist</span>
+      <div style={{ flex: 1, position: "relative" }}>
+        <input
+          className="setup__input"
+          value={open ? q : (value ?? "")}
+          placeholder={all ? "Search your playlists…" : "loading playlists…"}
+          onFocus={() => {
+            setOpen(true);
+            setQ("");
+          }}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        {open && shown.length > 0 && (
+          <ul className="setup__results setup__results--float">
+            {shown.slice(0, 8).map((p) => (
+              <li key={p.id}>
+                <button
+                  onMouseDown={() => {
+                    onPick({ name: p.name, id: p.id });
+                    setOpen(false);
+                  }}
+                >
+                  {p.name}
+                  <span className="setup__hint"> · {p.tracks} tracks</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AssistantSetting({ status }) {
   const [a, setA] = useState(null);
   const [msg, setMsg] = useState(null);
@@ -165,6 +244,7 @@ function AssistantSetting({ status }) {
         wakePhrase: a.wakePhrase,
         userName: a.userName,
         morningPlaylist: a.morningPlaylist,
+        morningPlaylistId: a.morningPlaylistId ?? "",
         units: a.units,
       }),
     })
@@ -177,6 +257,8 @@ function AssistantSetting({ status }) {
   };
 
   const asst = status.assistant ?? {};
+  // Spotify only drives music when it's a Premium account (the active source).
+  const spotifyActive = status.music?.source === "spotify";
 
   return (
     <div className="setup__row setup__row--stack">
@@ -199,15 +281,15 @@ function AssistantSetting({ status }) {
           placeholder="(your name)"
         />
       </label>
-      <label className="setup__field">
-        <span>Morning playlist</span>
-        <input
-          className="setup__input"
-          value={a.morningPlaylist ?? ""}
-          onChange={set("morningPlaylist")}
-          placeholder="Spotify playlist name"
-        />
-      </label>
+
+      <PlaylistPicker
+        connected={spotifyActive}
+        value={a.morningPlaylist}
+        onPick={({ name, id }) =>
+          setA({ ...a, morningPlaylist: name, morningPlaylistId: id })
+        }
+      />
+
       <label className="setup__field">
         <span>Units</span>
         <select
@@ -258,6 +340,10 @@ export default function Setup() {
 
   if (!status) return <div className="setup">Loading…</div>;
 
+  const params = new URLSearchParams(window.location.search);
+  const spotifyFree = params.get("spotify") === "free";
+  const musicSource = status.music?.source ?? "audius";
+
   return (
     <div className="setup">
       <h1>Mirror setup</h1>
@@ -280,7 +366,18 @@ export default function Setup() {
         onDisconnect={() =>
           fetch("/api/auth/spotify/disconnect", { method: "POST" }).then(load)
         }
+        note={
+          spotifyFree || (status.spotify?.connected && !status.spotify?.premium)
+            ? "This is a Spotify Free account — it can't stream through apps. Music plays from Audius instead. Disconnect and link a Premium account to use your Spotify playlists."
+            : status.spotify?.premium
+              ? "Premium — music plays from your Spotify playlists."
+              : "Optional. Music plays from Audius (free) until a Spotify Premium account is linked."
+        }
       />
+
+      <p className="setup__hint" style={{ marginTop: "1rem" }}>
+        Music source right now: <b>{musicSource}</b>
+      </p>
 
       <p className="setup__foot">
         <a href="/">← back to mirror</a>

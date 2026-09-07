@@ -1,7 +1,7 @@
 import { getWeather } from "../weather.js";
 import { getEvents } from "../schedule.js";
 import { getSettings } from "../settings.js";
-import * as spotify from "../spotify.js";
+import * as musicctl from "../musicctl.js";
 
 // Every tool returns { speak: string, data?, action?, segments? }.
 // `speak` is read aloud. `data` is for the mirror HUD. `segments` is used by
@@ -61,6 +61,16 @@ async function getWeatherSpoken({ when = "today" } = {}) {
   };
 }
 
+function spokenDuration(ms) {
+  const min = Math.round(ms / 60000);
+  if (min <= 0) return "";
+  if (min < 60) return `${min} minute${min === 1 ? "" : "s"}`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  const hp = `${h} hour${h === 1 ? "" : "s"}`;
+  return m ? `${hp} ${m} minute${m === 1 ? "" : "s"}` : hp;
+}
+
 async function getScheduleSpoken({ range = "today" } = {}) {
   const events = await getEvents(range);
   const label =
@@ -70,35 +80,90 @@ async function getScheduleSpoken({ range = "today" } = {}) {
     return { speak: `You have nothing scheduled for ${label}.`, data: [] };
   }
 
-  const lines = events.map((e) => {
+  const MAX_SPOKEN = 6;
+  const shown = events.slice(0, MAX_SPOKEN);
+  const extra = events.length - shown.length;
+
+  const lines = shown.map((e) => {
     const start = new Date(e.start);
-    if (range === "week") {
-      const day = weekdayFmt.format(start);
-      return e.allDay
-        ? `${e.title} on ${day}`
-        : `${e.title} ${day} at ${evTimeFmt.format(start)}`;
-    }
-    return e.allDay
-      ? `${e.title}, all day`
-      : `${e.title} at ${evTimeFmt.format(start)}`;
+    if (e.allDay) return `${e.title}, all day`;
+
+    const at =
+      range === "week"
+        ? `${weekdayFmt.format(start)} at ${evTimeFmt.format(start)}`
+        : `at ${evTimeFmt.format(start)}`;
+    const dur = e.end
+      ? spokenDuration(new Date(e.end).getTime() - start.getTime())
+      : "";
+    return `${e.title} ${at}${dur ? ` for ${dur}` : ""}`;
   });
 
-  return { speak: `For ${label}: ${joinList(lines)}.`, data: events };
+  let speak = `For ${label}: ${joinList(lines)}.`;
+  if (extra > 0) speak += ` And ${extra} more.`;
+  return { speak, data: events };
 }
 
 async function playPlaylist({ name } = {}) {
-  const { assistant } = await getSettings();
-  const query = (name || assistant.morningPlaylist || "").trim();
-
-  if (!(await spotify.isConnected())) {
-    return { speak: "Spotify isn't connected yet. Open the mirror's setup page to link it." };
+  try {
+    const r = await musicctl.play({ query: name });
+    if (r.source === "spotify") {
+      return { speak: `Playing ${r.label || "your playlist"} on Spotify.` };
+    }
+    const what = name ? name : "your morning mix";
+    return {
+      speak: `Playing ${what} from Audius${r.count ? ` — ${r.count} tracks` : ""}.`,
+    };
+  } catch (err) {
+    if ((err.message || "").includes("nothing_found")) {
+      return { speak: "I couldn't find anything for that." };
+    }
+    return { speak: "I couldn't start any music." };
   }
-  if (!query) {
-    return { speak: "You haven't set a morning playlist yet. Say setup to choose one." };
-  }
+}
 
-  await spotify.playSearch(query, "playlist");
-  return { speak: `Playing ${query}.`, action: { type: "spotify_play", query } };
+async function playTrending({ genre } = {}) {
+  try {
+    await musicctl.play({ trending: true, genre });
+    return {
+      speak: genre
+        ? `Playing trending ${genre} from Audius.`
+        : "Playing what's trending on Audius.",
+    };
+  } catch {
+    return { speak: "I couldn't load the trending chart." };
+  }
+}
+
+async function pauseMusic() {
+  await musicctl.pause();
+  return { speak: "Paused." };
+}
+
+async function resumeMusic() {
+  await musicctl.resume();
+  return { speak: "" }; // just resume, no chatter
+}
+
+async function nextTrack() {
+  await musicctl.next();
+  const s = await musicctl.state();
+  const t = s.track;
+  const title = t?.title || t?.track;
+  return { speak: title ? `Next: ${title}.` : "That's the end of the queue." };
+}
+
+async function prevTrack() {
+  await musicctl.previous();
+  return { speak: "" };
+}
+
+async function whatsPlaying() {
+  const s = await musicctl.state();
+  const t = s.track;
+  const title = t?.title || t?.track;
+  if (!title) return { speak: "Nothing's playing right now." };
+  const artist = t?.artist || t?.artists;
+  return { speak: artist ? `${title}, by ${artist}.` : title };
 }
 
 async function runMorningRoutine() {
@@ -168,12 +233,48 @@ export const TOOLS = [
   {
     name: "play_playlist",
     description:
-      "Play a Spotify playlist by name. Omit `name` to play the user's saved morning playlist.",
+      "Start music. `name` is a playlist, artist, genre or mood (e.g. 'lofi', 'the mornings playlist'). Omit `name` for the user's saved morning playlist. Uses Spotify if a Premium account is linked, otherwise Audius.",
     input_schema: {
       type: "object",
       properties: { name: { type: "string" } },
       additionalProperties: false,
     },
+  },
+  {
+    name: "play_trending",
+    description:
+      "Play Audius's current trending chart. `genre` is optional — e.g. 'techno', 'lofi', 'hip hop', 'ambient', 'jazz'.",
+    input_schema: {
+      type: "object",
+      properties: { genre: { type: "string" } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "pause_music",
+    description: "Pause playback.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "resume_music",
+    description: "Resume paused playback.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "next_track",
+    description: "Skip to the next track.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "previous_track",
+    description:
+      "Go back — restart the current track, or to the previous one if it just started.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "whats_playing",
+    description: "Say the track and artist currently playing.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "run_morning_routine",
@@ -195,6 +296,12 @@ const IMPL = {
   get_weather: getWeatherSpoken,
   get_schedule: getScheduleSpoken,
   play_playlist: playPlaylist,
+  play_trending: playTrending,
+  pause_music: pauseMusic,
+  resume_music: resumeMusic,
+  next_track: nextTrack,
+  previous_track: prevTrack,
+  whats_playing: whatsPlaying,
   run_morning_routine: runMorningRoutine,
   open_setup: () => ({ speak: "", startSetup: true }),
 };

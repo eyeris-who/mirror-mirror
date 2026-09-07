@@ -3,16 +3,19 @@ import { getTokens, setTokens, clearTokens } from "./tokenStore.js";
 const {
   SPOTIFY_CLIENT_ID,
   SPOTIFY_CLIENT_SECRET,
-  SPOTIFY_REDIRECT_URI = "http://localhost:3001/api/auth/spotify/callback",
+  // Spotify rejects "localhost" — must be the loopback IP 127.0.0.1 (or [::1]).
+  SPOTIFY_REDIRECT_URI = "http://127.0.0.1:3001/api/auth/spotify/callback",
 } = process.env;
 
-// streaming + playback control (needs Spotify Premium to actually play).
+// Playback control (needs Premium) + reading the user's own playlists.
 const SCOPES = [
   "streaming",
   "user-read-email",
   "user-read-private",
   "user-read-playback-state",
   "user-modify-playback-state",
+  "playlist-read-private",
+  "playlist-read-collaborative",
 ].join(" ");
 
 const AUTH = "https://accounts.spotify.com";
@@ -29,6 +32,9 @@ export function authUrl(state = "mirror") {
   u.searchParams.set("scope", SCOPES);
   u.searchParams.set("redirect_uri", SPOTIFY_REDIRECT_URI);
   u.searchParams.set("state", state);
+  // Force the consent screen so re-connecting picks up newly-added scopes
+  // instead of silently reusing the previous authorization.
+  u.searchParams.set("show_dialog", "true");
   return u.toString();
 }
 
@@ -55,12 +61,19 @@ export async function handleCallback(code) {
   const t = await res.json();
   await setTokens("spotify", {
     ...t,
+    scope: t.scope,
     expires_at: Date.now() + t.expires_in * 1000,
   });
 }
 
 export async function isConnected() {
   return Boolean(await getTokens("spotify"));
+}
+
+/** Scopes actually granted on the stored token (helps spot a stale re-auth). */
+export async function grantedScopes() {
+  const t = await getTokens("spotify");
+  return t?.scope ? t.scope.split(" ") : [];
 }
 
 export async function disconnect() {
@@ -90,6 +103,7 @@ export async function getAccessToken() {
   const saved = await setTokens("spotify", {
     ...fresh,
     refresh_token: fresh.refresh_token ?? t.refresh_token,
+    scope: fresh.scope ?? t.scope,
     expires_at: Date.now() + fresh.expires_in * 1000,
   });
   return saved.access_token;
@@ -106,8 +120,34 @@ async function api(path, { method = "GET", body } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 204) return null; // no content (typical for controls)
-  if (!res.ok) throw new Error(`spotify ${method} ${path} → ${res.status}`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    const err = new Error(
+      `spotify ${method} ${path.split("?")[0]} → ${res.status} ${detail}`.trim(),
+    );
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
+}
+
+/** The user's profile — `.product` is "premium" | "free" | "open". */
+export async function me() {
+  return api("/me");
+}
+
+/** True only for a Premium account (playback control needs it). Cached briefly. */
+let premiumCache = { at: 0, value: false };
+export async function isPremium() {
+  if (Date.now() - premiumCache.at < 60_000) return premiumCache.value;
+  let value = false;
+  try {
+    value = (await me()).product === "premium";
+  } catch {
+    value = false;
+  }
+  premiumCache = { at: Date.now(), value };
+  return value;
 }
 
 export async function nowPlaying() {
@@ -126,10 +166,14 @@ export async function nowPlaying() {
 }
 
 export const play = (opts = {}) =>
-  api(
-    `/me/player/play${opts.deviceId ? `?device_id=${opts.deviceId}` : ""}`,
-    { method: "PUT", body: opts.contextUri ? { context_uri: opts.contextUri } : opts.uris ? { uris: opts.uris } : undefined },
-  );
+  api(`/me/player/play${opts.deviceId ? `?device_id=${opts.deviceId}` : ""}`, {
+    method: "PUT",
+    body: opts.contextUri
+      ? { context_uri: opts.contextUri }
+      : opts.uris
+        ? { uris: opts.uris }
+        : undefined,
+  });
 export const pause = () => api("/me/player/pause", { method: "PUT" });
 export const next = () => api("/me/player/next", { method: "POST" });
 export const previous = () => api("/me/player/previous", { method: "POST" });
@@ -139,7 +183,32 @@ export const transfer = (deviceId, playNow = true) =>
     body: { device_ids: [deviceId], play: playNow },
   });
 
-/** Search + play the first matching playlist/track. `type` = "playlist"|"track". */
+/** The user's own playlists (owned + followed), newest first. */
+export async function listPlaylists(max = 100) {
+  const out = [];
+  let url = `/me/playlists?limit=50`;
+  while (url && out.length < max) {
+    const page = await api(url);
+    for (const p of page.items ?? []) {
+      if (!p) continue;
+      out.push({
+        id: p.id,
+        name: p.name,
+        uri: p.uri,
+        owner: p.owner?.display_name ?? "",
+        tracks: p.tracks?.total ?? 0,
+        image: p.images?.[0]?.url ?? null,
+      });
+    }
+    url = page.next ? page.next.replace(API, "") : null;
+  }
+  return out;
+}
+
+export const playPlaylistById = (id, deviceId) =>
+  play({ contextUri: `spotify:playlist:${id}`, deviceId });
+
+/** Fallback when we only have a name: search, then play the first hit. */
 export async function playSearch(query, type = "playlist") {
   const r = await api(
     `/search?q=${encodeURIComponent(query)}&type=${type}&limit=1`,

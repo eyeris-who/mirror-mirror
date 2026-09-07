@@ -33,6 +33,8 @@ pip install -r requirements.txt
 python main.py
 ```
 
+(`python -m venv .venv` and  `pip install -r requirements.txt` are one-time only for setup)
+
 If activation is blocked: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then retry.
 macOS / Linux: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
 
@@ -68,7 +70,9 @@ Spoken commands (handled by the server's router, not here):
 - "what's the time / date"
 - "what's the weather" · "…tomorrow" · "…this week"
 - "what's on my schedule today" · "…tomorrow" · "…this week"
-- "play my morning playlist"
+- "play my morning playlist" · "play lofi" · "play jazz"
+- "play trending" · "play trending techno" · "play the top lofi tracks"
+- "pause" · "resume" · "next" · "skip" · "back" · "what's playing"
 - "start my morning routine" → date, time, weather, today's events, then the playlist
 - "setup" → spoken questionnaire (name, wake phrase, playlist, units)
 
