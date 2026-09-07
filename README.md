@@ -169,7 +169,9 @@ voice-service restart.
 | "what's the weather" / "…tomorrow" / "…this week" | current, next day, or 7-day |
 | "what's on my schedule today / tomorrow / this week" | calendar events for the range |
 | "play my morning playlist" · "play lofi" · "pause" · "next" · "back" · "what's playing" | music (see the Music section) |
-| "start my morning routine" | date → time → weather → today's events → playlist |
+| "go to sleep" / "turn off the display" / "goodnight" | fades the mirror to black (music + voice keep running; tap the screen or say "wake up" to bring it back) |
+| "wake up" / "turn on the display" | brings the mirror back |
+| "start my morning routine" | date → time → weather → today's events → playlist (also wakes the display) |
 | "setup" | spoken questionnaire |
 
 ## APIs & auth — what each feature needs

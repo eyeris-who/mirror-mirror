@@ -28,6 +28,20 @@ function tier0(text) {
   if (/morning routine|start (my )?(morning|day)|^good morning\b/.test(t))
     return { tier: 0, tool: "run_morning_routine" };
 
+  // --- display sleep / wake ---
+  if (
+    /\b(go to sleep|sleep mode|goodnight|good night)\b|turn off (the )?(display|screen|mirror)|(display|screen|mirror) off|shut (off|down) (the )?(display|screen)/.test(
+      t,
+    )
+  )
+    return { tier: 0, tool: "sleep_display" };
+  if (
+    /\bwake up\b|turn on (the )?(display|screen|mirror)|(display|screen|mirror) on|wake the (mirror|screen|display)|^wake\b/.test(
+      t,
+    )
+  )
+    return { tier: 0, tool: "wake_display" };
+
   if (/\bset ?up\b|configure( the)? (mirror|assistant)|change (my )?settings/.test(t))
     return { tier: 0, tool: "open_setup" };
 

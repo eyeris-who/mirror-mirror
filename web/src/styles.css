@@ -32,6 +32,16 @@ body {
   display: flex;
   justify-content: space-between;
   gap: var(--pad);
+  transition: opacity 0.7s ease;
+}
+/* "go to sleep" — everything fades out; music/voice keep running underneath */
+.mirror--asleep {
+  opacity: 0;
+}
+.mirror__wake {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
 }
 
 .col {

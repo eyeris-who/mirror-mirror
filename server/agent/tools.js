@@ -2,6 +2,7 @@ import { getWeather } from "../weather.js";
 import { getEvents } from "../schedule.js";
 import { getSettings } from "../settings.js";
 import * as musicctl from "../musicctl.js";
+import * as display from "../display.js";
 
 // Every tool returns { speak: string, data?, action?, segments? }.
 // `speak` is read aloud. `data` is for the mirror HUD. `segments` is used by
@@ -166,7 +167,18 @@ async function whatsPlaying() {
   return { speak: artist ? `${title}, by ${artist}.` : title };
 }
 
+function sleepDisplay() {
+  display.setOn(false);
+  return { speak: "Goodnight." };
+}
+
+function wakeDisplay() {
+  display.setOn(true);
+  return { speak: "" }; // the screen coming back is the confirmation
+}
+
 async function runMorningRoutine() {
+  display.setOn(true); // if the mirror was asleep, wake it for the briefing
   const { assistant } = await getSettings();
   const steps = assistant.morningRoutine?.length
     ? assistant.morningRoutine
@@ -283,6 +295,17 @@ export const TOOLS = [
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
+    name: "sleep_display",
+    description:
+      "Fade the mirror to black (screen off / sleep / goodnight). Music and voice keep running.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "wake_display",
+    description: "Bring the mirror back (screen on / wake up).",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
     name: "open_setup",
     description:
       "Begin the spoken setup flow (asks for the user's name, wake phrase, morning playlist and temperature units).",
@@ -302,6 +325,8 @@ const IMPL = {
   next_track: nextTrack,
   previous_track: prevTrack,
   whats_playing: whatsPlaying,
+  sleep_display: sleepDisplay,
+  wake_display: wakeDisplay,
   run_morning_routine: runMorningRoutine,
   open_setup: () => ({ speak: "", startSetup: true }),
 };

@@ -73,6 +73,7 @@ Spoken commands (handled by the server's router, not here):
 - "play my morning playlist" · "play lofi" · "play jazz"
 - "play trending" · "play trending techno" · "play the top lofi tracks"
 - "pause" · "resume" · "next" · "skip" · "back" · "what's playing"
+- "go to sleep" / "turn off the display" · "wake up" / "turn on the display"
 - "start my morning routine" → date, time, weather, today's events, then the playlist
 - "setup" → spoken questionnaire (name, wake phrase, playlist, units)
 

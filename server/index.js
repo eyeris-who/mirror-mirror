@@ -10,6 +10,7 @@ import * as spotify from "./spotify.js";
 import * as audius from "./audius.js";
 import * as musicctl from "./musicctl.js";
 import * as player from "./player.js";
+import * as display from "./display.js";
 import * as llm from "./agent/llm.js";
 import { handleCommand } from "./agent/index.js";
 import { logMetric } from "./agent/metrics.js";
@@ -290,6 +291,12 @@ app.post("/api/command", async (req, res) => {
 // Live state for the on-mirror voice indicator. The Python service POSTs here;
 // the web app polls it.
 let voiceState = { state: "idle", transcript: "", response: "", tier: null };
+
+// Is the mirror awake? The page polls this and fades to black when off.
+app.get("/api/display", (_req, res) => res.json({ on: display.isOn() }));
+app.post("/api/display", (req, res) => {
+  res.json({ on: display.setOn(req.body?.on !== false) });
+});
 
 app.get("/api/voice/state", (_req, res) => res.json(voiceState));
 
