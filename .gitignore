@@ -4,6 +4,7 @@ server/.env
 server/data/tokens.json
 server/data/settings.json
 server/data/metrics.jsonl
+server/data/reminders.json
 voice/.venv/
 voice/__pycache__/
 *.log

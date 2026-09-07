@@ -1,12 +1,13 @@
 import { useEffect, useReducer } from "react";
 import { usePolling } from "../hooks/usePolling.js";
+import { pickVisible } from "../lib/pickVisible.js";
 
 const TIME_FMT = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
   minute: "2-digit",
 });
 
-const MAX_VISIBLE = 10;
+const MAX_VISIBLE = 5;
 
 function humanDur(ms) {
   const min = Math.round(ms / 60000);
@@ -40,28 +41,7 @@ export default function Schedule() {
     ...e,
     past: new Date(e.end || e.start).getTime() < now,
   }));
-
-  // Aim to fill MAX_VISIBLE rows. Always show every upcoming event that fits;
-  // use leftover slots for the most-recently-ended events. Only when upcoming
-  // events alone overflow do we drop some and keep just one ended for context.
-  const past = all.filter((e) => e.past); // chronological
-  const upcoming = all.filter((e) => !e.past);
-
-  let nUpcoming;
-  let nPast;
-  if (upcoming.length > MAX_VISIBLE) {
-    nPast = past.length ? 1 : 0;
-    nUpcoming = MAX_VISIBLE - nPast;
-  } else {
-    nUpcoming = upcoming.length;
-    nPast = Math.min(past.length, MAX_VISIBLE - nUpcoming);
-  }
-
-  const visible = [
-    ...past.slice(past.length - nPast),
-    ...upcoming.slice(0, nUpcoming),
-  ];
-  const hidden = all.length - visible.length;
+  const { visible, hidden } = pickVisible(all, MAX_VISIBLE);
 
   return (
     <div className="schedule">

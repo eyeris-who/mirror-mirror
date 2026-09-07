@@ -246,6 +246,7 @@ function AssistantSetting({ status }) {
         morningPlaylist: a.morningPlaylist,
         morningPlaylistId: a.morningPlaylistId ?? "",
         units: a.units,
+        newsCategory: a.newsCategory,
       }),
     })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
@@ -299,6 +300,22 @@ function AssistantSetting({ status }) {
         >
           <option value="fahrenheit">Fahrenheit</option>
           <option value="celsius">Celsius</option>
+        </select>
+      </label>
+      <label className="setup__field">
+        <span>News</span>
+        <select
+          className="setup__input"
+          value={a.newsCategory ?? "technology"}
+          onChange={set("newsCategory")}
+        >
+          {["top", "world", "business", "technology", "science", "health", "sports", "entertainment"].map(
+            (c) => (
+              <option key={c} value={c}>
+                {c[0].toUpperCase() + c.slice(1)}
+              </option>
+            ),
+          )}
         </select>
       </label>
 

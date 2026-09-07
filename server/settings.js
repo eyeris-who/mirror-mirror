@@ -23,8 +23,9 @@ const DEFAULTS = {
     morningPlaylist: "", // display name
     morningPlaylistId: "", // Spotify playlist id (set when picked from the list)
     units: process.env.TEMPERATURE_UNIT || "fahrenheit", // "celsius" | "fahrenheit"
+    newsCategory: process.env.NEWS_CATEGORY || "technology", // see server/news.js CATEGORIES
     // Ordered steps for "start my morning routine".
-    morningRoutine: ["date", "time", "weather", "events", "playlist"],
+    morningRoutine: ["date", "time", "weather", "events", "news", "playlist"],
     // Which model handles which tier — see server/agent/router.js.
     models: {
       local: process.env.OLLAMA_MODEL || "qwen3:8b",
@@ -52,6 +53,15 @@ async function load() {
         },
       },
     };
+    // Migrate a routine saved before the "news" step existed.
+    const r = mem.assistant.morningRoutine;
+    if (
+      Array.isArray(r) &&
+      !r.includes("news") &&
+      JSON.stringify(r) === JSON.stringify(["date", "time", "weather", "events", "playlist"])
+    ) {
+      mem.assistant.morningRoutine = [...DEFAULTS.assistant.morningRoutine];
+    }
   } catch {
     mem = structuredClone(DEFAULTS);
   }

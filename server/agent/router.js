@@ -45,6 +45,33 @@ function tier0(text) {
   if (/\bset ?up\b|configure( the)? (mirror|assistant)|change (my )?settings/.test(t))
     return { tier: 0, tool: "open_setup" };
 
+  // --- reminders (check "remind me" before anything else) ---
+  if (/\bremind me\b|set (a |an )?reminder|make (a |an )?reminder/.test(t))
+    return { tier: 0, tool: "set_reminder", args: { phrase: text } };
+  if (/\b(list|show|what( are|'?s)|check|any of my|do i have( any)?)\b.*\breminders?\b/.test(t))
+    return { tier: 0, tool: "list_reminders" };
+  if (/\b(clear|cancel|delete|remove|forget)\b.*\breminders?\b/.test(t))
+    return { tier: 0, tool: "clear_reminders" };
+
+  // --- news ---
+  {
+    const cat = t.match(
+      /\b(tech(nology)?|world|business|finance|science|health|sports?|entertainment)\b.*\bnews\b|\bnews\b.*\b(tech(nology)?|world|business|finance|science|health|sports?|entertainment)\b/,
+    );
+    if (/\bset (the |my )?news( category)? to \b|\bchange (the )?news (category )?to \b/.test(t)) {
+      const m = t.match(/news( category)? to ([a-z]+)/);
+      return { tier: 0, tool: "set_news_category", args: { category: m?.[2] } };
+    }
+    if (
+      /\b(the )?news\b|\bheadlines\b|what'?s (happening|going on|in the news)|read me the news|catch me up/.test(
+        t,
+      )
+    ) {
+      const c = cat ? (cat[1] || cat[2] || "").replace(/^tech$/, "technology") : null;
+      return { tier: 0, tool: "get_news", args: c ? { category: c } : {} };
+    }
+  }
+
   // --- music transport (check before "play …") ---
   if (/^(pause|stop)( the| this)?( music| song| playback| track)?[.!]?$/.test(t))
     return { tier: 0, tool: "pause_music" };

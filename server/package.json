@@ -10,9 +10,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
+    "@extractus/article-extractor": "^9.0.1",
+    "chrono-node": "^2.10.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
-    "googleapis": "^144.0.0"
+    "googleapis": "^144.0.0",
+    "rss-parser": "^3.13.0"
   }
 }

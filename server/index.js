@@ -11,6 +11,8 @@ import * as audius from "./audius.js";
 import * as musicctl from "./musicctl.js";
 import * as player from "./player.js";
 import * as display from "./display.js";
+import * as news from "./news.js";
+import * as reminders from "./reminders.js";
 import * as llm from "./agent/llm.js";
 import { handleCommand } from "./agent/index.js";
 import { logMetric } from "./agent/metrics.js";
@@ -271,6 +273,7 @@ app.post("/api/command", async (req, res) => {
     const out = await handleCommand(text.trim(), session);
 
     if (out.setup) sessions.set(sessionId, { setup: out.setup });
+    else if (out.newsFlow) sessions.set(sessionId, { newsFlow: out.newsFlow });
     else sessions.delete(sessionId);
 
     res.json({
@@ -278,6 +281,7 @@ app.post("/api/command", async (req, res) => {
       segments: out.segments,
       action: out.action,
       expectReply: out.expectReply,
+      replyTimeoutMs: out.replyTimeoutMs,
       tier: out.tier,
     });
   } catch (err) {
@@ -309,6 +313,45 @@ app.post("/api/voice/metric", async (req, res) => {
   await logMetric({ kind: "voice", ...(req.body ?? {}) });
   res.json({ ok: true });
 });
+
+// ---- reminders ----------------------------------------------------
+app.get("/api/reminders", async (_req, res) => {
+  res.json({ reminders: await reminders.pending() });
+});
+
+app.delete("/api/reminders", async (_req, res) => {
+  const n = await reminders.clearAll();
+  res.json({ cleared: n });
+});
+
+// Things the voice service should speak (fired reminders). It polls this,
+// speaks them, then acks by id.
+let announcements = [];
+app.get("/api/voice/announcements", (_req, res) =>
+  res.json({ items: announcements }),
+);
+app.post("/api/voice/announcements/ack", (req, res) => {
+  const ids = new Set(req.body?.ids ?? []);
+  announcements = announcements.filter((a) => !ids.has(a.id));
+  res.json({ ok: true });
+});
+
+setInterval(async () => {
+  try {
+    const due = await reminders.dueNow();
+    for (const r of due) {
+      announcements.push({ id: r.id, text: `Reminder: ${r.text}.` });
+      display.setOn(true); // wake the mirror so the reminder is seen
+    }
+  } catch (err) {
+    console.error("reminder tick:", err.message);
+  }
+}, 20_000);
+
+// ---- news (category list for the setup page) ---------------------
+app.get("/api/news/categories", (_req, res) =>
+  res.json({ categories: news.CATEGORIES }),
+);
 
 app
   .listen(PORT, () => console.log(`mirror server on http://localhost:${PORT}`))

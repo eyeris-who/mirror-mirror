@@ -182,10 +182,19 @@ voice-service restart.
 | "what's the weather" / "…tomorrow" / "…this week" | current, next day, or 7-day |
 | "what's on my schedule today / tomorrow / this week" | calendar events for the range |
 | "play my morning playlist" · "play lofi" · "pause" · "next" · "back" · "what's playing" | music (see the Music section) |
+| "what's the news" / "tech news" / "world news" | reads 3 headlines, then waits for a number or a keyword to read one (say "skip" to stop) |
+| "set news to science" | change the news category |
+| "remind me to call mom at 5pm" · "remind me to X in 20 minutes" | sets a reminder (natural-language time) |
+| "what are my reminders" · "clear my reminders" | list / cancel |
 | "go to sleep" / "turn off the display" / "goodnight" | fades the mirror to black (music + voice keep running; tap the screen or say "wake up" to bring it back) |
 | "wake up" / "turn on the display" | brings the mirror back |
-| "start my morning routine" | date → time → weather → today's events → playlist (also wakes the display) |
+| "start my morning routine" | date → time → weather → events → **3 headlines** (7s to pick one, else) → playlist. Also wakes the display. |
 | "setup" | spoken questionnaire |
+
+Reminders show on the mirror (left column) and are spoken when due — the server
+wakes the mirror and queues them at `/api/voice/announcements`, which the voice
+service polls between wake-word listens. Reminders are stored in
+`server/data/reminders.json` (gitignored).
 
 ## APIs & auth — what each feature needs
 
@@ -193,6 +202,8 @@ voice-service restart.
 |---|---|---|---|
 | Weather | Open-Meteo + BigDataCloud | none | free |
 | Calendar | Google Calendar API | OAuth (browser, one-time) | free |
+| News | Publisher RSS (BBC, The Verge, Ars, ESPN) + readability extraction | none | free |
+| Reminders | `chrono-node` (local NL time parsing) | none | free |
 | Music (default) | Audius | none | free |
 | Music (if linked) | Spotify Web API + Playback SDK | OAuth (browser) + **Premium** | free API, paid account |
 | Speech-to-text | faster-whisper | none (downloads model weights) | free, local |

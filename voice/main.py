@@ -29,10 +29,35 @@ def send_command(server, text):
     r = requests.post(
         f"{server}/api/command",
         json={"text": text, "sessionId": SESSION_ID},
-        timeout=30,
+        timeout=45,
     )
     r.raise_for_status()
     return r.json()
+
+
+def check_announcements(server, voice):
+    """Fired reminders the server wants spoken. Returns True if it spoke."""
+    try:
+        items = requests.get(
+            f"{server}/api/voice/announcements", timeout=2
+        ).json().get("items", [])
+    except Exception:
+        return False
+    if not items:
+        return False
+    for a in items:
+        post_state(server, state="speaking", response=a["text"])
+        voice.say(a["text"])
+    try:
+        requests.post(
+            f"{server}/api/voice/announcements/ack",
+            json={"ids": [a["id"] for a in items]},
+            timeout=2,
+        )
+    except Exception:
+        pass
+    post_state(server, state="idle")
+    return True
 
 
 def speak_reply(voice, reply):
@@ -60,8 +85,11 @@ def main():
     print("[mirror] listening. Say the wake phrase.")
 
     while True:
-        utt = ears.next_utterance(max_silence_ms=600)
+        # Return from listening every few seconds so we can speak fired
+        # reminders even while nobody's talking.
+        utt = ears.next_utterance(max_silence_ms=600, start_timeout_s=4)
         if utt is None:
+            check_announcements(server, voice)
             continue
 
         t_wake = time.time()
@@ -114,13 +142,21 @@ def main():
         tts_ms = int((time.time() - t_tts) * 1000)
         time.sleep(0.3)  # avoid catching the tail of our own speech as a command
 
-        # spoken setup (or any multi-turn flow): keep listening, no wake phrase
+        # multi-turn flows: spoken setup, or picking a news headline.
         while reply.get("expectReply"):
             post_state(server, state="listening", response=reply.get("speak", ""))
-            utt = ears.next_utterance(max_silence_ms=900, start_timeout_s=12)
+            timeout_ms = reply.get("replyTimeoutMs")
+            listen_s = timeout_ms / 1000 if timeout_ms else 15
+            utt = ears.next_utterance(max_silence_ms=900, start_timeout_s=listen_s)
             answer = ears.transcribe(utt) if utt is not None else ""
+
             if not answer:
-                break
+                if timeout_ms:
+                    # the flow wants a fallback on silence (routine -> play music)
+                    answer = "__timeout__"
+                else:
+                    break  # setup etc — just stop waiting
+
             print(f"[reply] {answer!r}")
             try:
                 reply = send_command(server, answer)

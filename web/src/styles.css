@@ -6,6 +6,7 @@
   --fg-dim: #8a8a8a;
   --gap: clamp(0.6rem, 2vw, 1.1rem);
   --pad: clamp(0.9rem, 2.5vw, 1.75rem);
+  --right-col: min(20rem, 20vw); /* width of the events / reminders / character column */
   font-family: "Helvetica Neue", Arial, system-ui, sans-serif;
 }
 
@@ -37,11 +38,13 @@ body {
    sleeping animation), and music/voice keep running underneath. */
 .col--left,
 .col--right > .schedule,
+.col--right > .reminders,
 .voicehud {
   transition: opacity 0.7s ease;
 }
 .mirror--asleep .col--left,
 .mirror--asleep .col--right > .schedule,
+.mirror--asleep .col--right > .reminders,
 .mirror--asleep .voicehud {
   opacity: 0;
   pointer-events: none;
@@ -52,14 +55,16 @@ body {
   z-index: 50;
 }
 
-/* ---- character (placeholder) — pinned bottom-right ---- */
+/* ---- character (placeholder) — after the reminders in the DOM, but pinned to
+   the bottom-right corner with the same margin as the panels ---- */
 .character {
   position: fixed;
   right: var(--pad);
   bottom: var(--pad);
+  z-index: 40;
 }
 .character__box {
-  width: clamp(15rem, 24vw, 26rem);
+  width: var(--right-col);
   aspect-ratio: 4 / 3;
   border: 1px dashed var(--fg-dim);
   border-radius: 8px;
@@ -94,6 +99,8 @@ body {
 .col--right {
   text-align: right;
   align-items: flex-end;
+  width: var(--right-col); /* fixed so the lists can size their columns */
+  gap: clamp(0.6rem, 2vw, 1rem); /* events → reminders → animation, stacked tight */
 }
 
 /* ---- date / time ---- */
@@ -129,7 +136,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.4em;
-  font-size: clamp(0.78rem, 2vw, 1.05rem);
+  font-size: clamp(0.72rem, 1.8vw, 0.95rem);
   font-weight: 300;
 }
 .weather__head {
@@ -169,7 +176,7 @@ body {
 }
 .weather__row {
   display: grid;
-  grid-template-columns: 2.8em 1.3em 1fr auto;
+  grid-template-columns: 2.8em 1.3em minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.5em;
 }
@@ -205,7 +212,7 @@ body {
 /* ---- schedule ---- */
 .schedule {
   font-weight: 300;
-  width: min(30rem, 100%);
+  width: 100%;
 }
 .schedule__title {
   font-size: clamp(0.85rem, 2.2vw, 1.1rem);
@@ -226,10 +233,10 @@ body {
 }
 .schedule__item {
   display: grid;
-  grid-template-columns: 4.6em 3.6em 1fr; /* time | duration | title */
+  grid-template-columns: 4.6em 3.6em minmax(0, 1fr); /* time | duration | title */
   gap: 0.7em;
   align-items: baseline;
-  font-size: clamp(0.78rem, 2vw, 1.05rem); /* match .weather */
+  font-size: clamp(0.72rem, 1.8vw, 0.95rem); /* match .weather */
   font-weight: 300;
 }
 .schedule__item--past {
@@ -259,6 +266,51 @@ body {
   color: var(--fg-dim);
   font-size: 0.85em;
   margin-top: 0.5em;
+}
+
+/* ---- reminders (matches the schedule) ---- */
+.reminders {
+  width: 100%;
+  font-weight: 300;
+}
+.reminders__title {
+  font-size: clamp(0.85rem, 2.2vw, 1.1rem);
+  font-weight: 400;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  padding-bottom: 0.4em;
+  margin-bottom: 0.6em;
+  border-bottom: 1px solid #2a2a2a;
+}
+.reminders__list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+.reminders__item {
+  display: grid;
+  grid-template-columns: 5.6em minmax(0, 1fr);
+  gap: 0.7em;
+  align-items: baseline;
+  font-size: clamp(0.72rem, 1.8vw, 0.95rem);
+}
+.reminders__item--past {
+  opacity: 0.4;
+}
+.reminders__time {
+  color: var(--fg-dim);
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.reminders__text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---- music player ---- */
@@ -467,8 +519,9 @@ body {
 .voicehud {
   position: fixed;
   left: 0;
-  right: 0;
   bottom: 0;
+  /* leave the bottom-right clear for the character */
+  right: var(--right-col);
   padding: 2rem var(--pad) 1.5rem;
   display: flex;
   gap: 0.7em;
