@@ -32,16 +32,53 @@ body {
   display: flex;
   justify-content: space-between;
   gap: var(--pad);
+}
+/* "go to sleep" — panels fade to black; the character stays (it can play its
+   sleeping animation), and music/voice keep running underneath. */
+.col--left,
+.col--right > .schedule,
+.voicehud {
   transition: opacity 0.7s ease;
 }
-/* "go to sleep" — everything fades out; music/voice keep running underneath */
-.mirror--asleep {
+.mirror--asleep .col--left,
+.mirror--asleep .col--right > .schedule,
+.mirror--asleep .voicehud {
   opacity: 0;
+  pointer-events: none;
 }
 .mirror__wake {
   position: fixed;
   inset: 0;
   z-index: 50;
+}
+
+/* ---- character (placeholder) — pinned bottom-right ---- */
+.character {
+  position: fixed;
+  right: var(--pad);
+  bottom: var(--pad);
+}
+.character__box {
+  width: clamp(15rem, 24vw, 26rem);
+  aspect-ratio: 4 / 3;
+  border: 1px dashed var(--fg-dim);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6em;
+  color: var(--fg-dim);
+}
+.character__label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+.character__state {
+  font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+  color: var(--fg);
+  text-transform: lowercase;
 }
 
 .col {

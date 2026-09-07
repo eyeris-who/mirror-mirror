@@ -1,6 +1,7 @@
 import DateTime from "./components/DateTime.jsx";
 import Weather from "./components/Weather.jsx";
 import Schedule from "./components/Schedule.jsx";
+import Character from "./components/Character.jsx";
 import MusicPlayer from "./components/MusicPlayer.jsx";
 import VoiceHUD from "./components/VoiceHUD.jsx";
 import Setup from "./Setup.jsx";
@@ -34,6 +35,7 @@ function Mirror() {
 
         <section className="col col--right">
           <Schedule />
+          <Character />
         </section>
 
         <VoiceHUD />

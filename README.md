@@ -40,7 +40,20 @@ Copy `server/.env.example` to `server/.env` and fill it in.
 - **Now playing** — current Spotify track; hidden when nothing is playing.
 
 Right column: **Schedule** — today's events (Google Calendar once connected,
-else the sample file).
+else the sample file) + **Character** (placeholder box for now — see below).
+
+## Character animation (planned)
+
+`web/src/components/Character.jsx` computes a live state and shows a placeholder
+box under the schedule. States: `idle`, `talking`, `sleeping`, `going to sleep`,
+`waking up` — derived from `/api/display` and `/api/voice/state`. When the mirror
+sleeps, the panels fade to black but the character stays (so it can play a
+sleeping animation).
+
+Recommended format: a **Rive** `.riv` file with a state machine (inputs for
+awake/talking, transition clips for sleep/wake) driven by `@rive-app/react-canvas`,
+or **Lottie** `.json` clips (one per state) cross-faded on change. Design them
+light-on-transparent — black is invisible through a two-way mirror.
 
 ## Setting the location
 
