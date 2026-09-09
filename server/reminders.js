@@ -9,6 +9,12 @@ const FILE = join(here, "data", "reminders.json");
 // [{ id, text, at: ISO, fired: bool }]  — gitignored (personal + transient)
 let mem = null;
 
+// Called whenever the list changes so the server can re-arm its fire timer.
+let onChange = () => {};
+export function watch(fn) {
+  onChange = fn;
+}
+
 async function load() {
   if (mem) return mem;
   try {
@@ -40,7 +46,15 @@ export function parse(phrase) {
   if (!results.length) return null;
 
   const r = results[0];
-  const at = r.start.date();
+  let at = r.start.date();
+
+  // "remind me at 8" (no am/pm) after 8am resolves to a past 8am — nudge it
+  // forward: 12h if the am/pm was ambiguous ("8" -> 8pm), else a day.
+  const grace = Date.now() - 60_000;
+  if (at.getTime() < grace) {
+    if (!r.start.isCertain("meridiem")) at = new Date(at.getTime() + 12 * 3600e3);
+    if (at.getTime() < grace) at = new Date(at.getTime() + 24 * 3600e3);
+  }
   const text =
     (cleaned.slice(0, r.index) + cleaned.slice(r.index + r.text.length))
       .replace(/\b(at|on|by|around|this|next)\s*$/i, "")
@@ -62,7 +76,17 @@ export async function add(text, atISO) {
   mem.push(reminder);
   mem.sort((a, b) => new Date(a.at) - new Date(b.at));
   await persist();
+  onChange();
   return reminder;
+}
+
+/** Timestamp (ms) of the soonest not-yet-fired reminder, or null. */
+export async function nextDueAt() {
+  await load();
+  const times = mem
+    .filter((r) => !r.fired)
+    .map((r) => new Date(r.at).getTime());
+  return times.length ? Math.min(...times) : null;
 }
 
 /** Not-yet-fired, plus fired ones from the last 3h so overdue reminders linger
@@ -80,6 +104,7 @@ export async function clearAll() {
   const n = mem.length;
   mem = [];
   await persist();
+  onChange();
   return n;
 }
 

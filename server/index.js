@@ -336,7 +336,11 @@ app.post("/api/voice/announcements/ack", (req, res) => {
   res.json({ ok: true });
 });
 
-setInterval(async () => {
+// Fire reminders exactly at their time: a timer armed for the next due
+// reminder, re-armed whenever the list changes or one fires. A 30s ceiling
+// on the wait acts as a safety net (system sleep, clock jumps).
+let reminderTimer = null;
+async function scanReminders() {
   try {
     const due = await reminders.dueNow();
     for (const r of due) {
@@ -344,9 +348,23 @@ setInterval(async () => {
       display.setOn(true); // wake the mirror so the reminder is seen
     }
   } catch (err) {
-    console.error("reminder tick:", err.message);
+    console.error("reminder scan:", err.message);
   }
-}, 20_000);
+  armReminderTimer();
+}
+async function armReminderTimer() {
+  clearTimeout(reminderTimer);
+  let delay = 30_000;
+  try {
+    const next = await reminders.nextDueAt();
+    if (next != null) delay = Math.max(0, Math.min(next - Date.now(), 30_000));
+  } catch {
+    /* keep the 30s fallback */
+  }
+  reminderTimer = setTimeout(scanReminders, delay);
+}
+reminders.watch(armReminderTimer);
+armReminderTimer();
 
 // ---- news (category list for the setup page) ---------------------
 app.get("/api/news/categories", (_req, res) =>

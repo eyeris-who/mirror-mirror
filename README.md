@@ -22,6 +22,9 @@ also only calls `/api/*` — it has no knowledge of weather, calendars, etc.
 ```bash
 npm install
 npm run dev
+cd voice
+.venv\Scripts\Activate.ps1
+python main.py
 ```
 
 (PowerShell has no `&&` — run multi-step commands one line at a time.)

@@ -19,18 +19,30 @@ function when(d) {
 
 /** Pending + overdue reminders, formatted like the schedule. */
 export default function Reminders() {
-  const { data } = usePolling("/api/reminders", 30 * 1000);
-  const [, tick] = useReducer((x) => x + 1, 0);
-  useEffect(() => {
-    const id = setInterval(tick, 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
+  const { data } = usePolling("/api/reminders", 15 * 1000);
+  const [renders, tick] = useReducer((x) => x + 1, 0);
 
   const now = Date.now();
   const all = (data?.reminders ?? []).map((r) => ({
     ...r,
     past: new Date(r.at).getTime() < now, // overdue
   }));
+
+  // Re-render right when the next reminder crosses into "overdue". Cap the wait
+  // at a minute so a far-off reminder locks onto its exact second only when it's
+  // close (and background-timer drift can't matter). `renders` in the deps keeps
+  // the chain going after each tick.
+  const nextCross = all
+    .filter((r) => !r.past)
+    .reduce((min, r) => Math.min(min, new Date(r.at).getTime()), Infinity);
+  useEffect(() => {
+    const untilCross = Number.isFinite(nextCross)
+      ? Math.max(nextCross - Date.now(), 0) + 250
+      : Infinity;
+    const t = setTimeout(tick, Math.min(untilCross, 60 * 1000));
+    return () => clearTimeout(t);
+  }, [nextCross, renders]);
+
   if (!all.length) return null;
 
   const { visible, hidden } = pickVisible(all, MAX_VISIBLE);

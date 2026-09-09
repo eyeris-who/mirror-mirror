@@ -19,14 +19,27 @@ function humanDur(ms) {
 
 export default function Schedule() {
   // Poll the server every 2 min (picks up new/changed events + the day rolling
-  // over at midnight — "today" is computed server-side per request). Re-render
-  // every minute so events grey out the moment they end, without new data.
+  // over at midnight — "today" is computed server-side per request).
   const { data, error } = usePolling("/api/schedule", 2 * 60 * 1000);
-  const [, tick] = useReducer((x) => x + 1, 0);
+  const [renders, tick] = useReducer((x) => x + 1, 0);
+
+  const now = Date.now();
+  const events = data?.events ?? [];
+
+  // Re-render right when the next event ends (greys out), capped at a minute so
+  // a far-off event locks on only when it's close. `renders` keeps the chain
+  // going after each tick.
+  const nextCross = events
+    .map((e) => new Date(e.end || e.start).getTime())
+    .filter((t) => t > now)
+    .reduce((min, t) => Math.min(min, t), Infinity);
   useEffect(() => {
-    const id = setInterval(tick, 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
+    const untilCross = Number.isFinite(nextCross)
+      ? Math.max(nextCross - Date.now(), 0) + 250
+      : Infinity;
+    const t = setTimeout(tick, Math.min(untilCross, 60 * 1000));
+    return () => clearTimeout(t);
+  }, [nextCross, renders]);
 
   if (!data) {
     return (
@@ -36,8 +49,7 @@ export default function Schedule() {
     );
   }
 
-  const now = Date.now();
-  const all = (data.events ?? []).map((e) => ({
+  const all = events.map((e) => ({
     ...e,
     past: new Date(e.end || e.start).getTime() < now,
   }));

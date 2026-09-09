@@ -12,6 +12,7 @@ import os
 import platform
 import shutil
 import subprocess
+import tempfile
 
 _FORCE = os.environ.get("MIRROR_TTS", "").lower()
 _USE_SAPI = _FORCE == "sapi" or (
@@ -20,22 +21,34 @@ _USE_SAPI = _FORCE == "sapi" or (
     and shutil.which("powershell")
 )
 
-
 def _sapi_speak(text, rate):
-    # rate: SAPI scale is roughly -10..10; map our ~180 wpm default to ~1.
-    ps_rate = 1
-    safe = text.replace("'", "''")
-    script = (
-        "Add-Type -AssemblyName System.Speech; "
-        "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-        f"$s.Rate = {ps_rate}; "
-        f"$s.Speak('{safe}')"
-    )
-    subprocess.run(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-        check=False,
-        capture_output=True,
-    )
+    """Read the text from a UTF-8 temp file, not the command line — so
+    apostrophes, curly quotes, dashes etc. in article text can't break the
+    PowerShell string. (SAPI rate scale is ~-10..10; 1 ≈ our 180 wpm default.)"""
+    fd, path = tempfile.mkstemp(suffix=".txt", prefix="mirror-tts-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        script = (
+            "$ErrorActionPreference='Stop';"
+            f"$t=[IO.File]::ReadAllText('{path}',[Text.Encoding]::UTF8);"
+            "Add-Type -AssemblyName System.Speech;"
+            "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
+            "$s.Rate=1;$s.Speak($t)"
+        )
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode != 0:
+            print(f"[speak] SAPI error: {(r.stderr or '').strip()[:200]}")
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 class Voice:

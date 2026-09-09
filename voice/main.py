@@ -87,9 +87,9 @@ def main():
     while True:
         # Return from listening every few seconds so we can speak fired
         # reminders even while nobody's talking.
-        utt = ears.next_utterance(max_silence_ms=600, start_timeout_s=4)
+        utt = ears.next_utterance(max_silence_ms=600, start_timeout_s=2)
         if utt is None:
-            check_announcements(server, voice)
+            check_announcements(server, voice)  # speak any fired reminders
             continue
 
         t_wake = time.time()
