@@ -40,10 +40,11 @@ Copy `server/.env.example` to `server/.env` and fill it in.
 - **Date + time** — live; seconds shown small next to the minutes.
 - **Location** — the city set on `/setup`, shown under the date.
 - **Weather** — 7 days: condition, high, low, for that location.
-- **Now playing** — current Spotify track; hidden when nothing is playing.
+- **Now playing** — current track (Spotify or Audius); hidden when nothing is playing.
 
 Right column: **Schedule** — today's events (Google Calendar once connected,
-else the sample file) + **Character** (placeholder box for now — see below).
+else the sample file) + **Reminders** + **Character** (placeholder box for now —
+see below).
 
 ## Character animation (planned)
 
@@ -194,7 +195,7 @@ voice-service restart.
 | "start my morning routine" | date → time → weather → events → **3 headlines** (7s to pick one, else) → playlist. Also wakes the display. |
 | "setup" | spoken questionnaire |
 
-Reminders show on the mirror (left column) and are spoken when due — the server
+Reminders show on the mirror (right column) and are spoken when due — the server
 wakes the mirror and queues them at `/api/voice/announcements`, which the voice
 service polls between wake-word listens. Reminders are stored in
 `server/data/reminders.json` (gitignored).
