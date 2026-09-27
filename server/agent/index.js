@@ -2,6 +2,7 @@ import { runTool, continueNewsFlow } from "./tools.js";
 import { route } from "./router.js";
 import { runSetupStep } from "./setupFlow.js";
 import { logMetric } from "./metrics.js";
+import { logTurn } from "../memory/index.js";
 
 /**
  * Turn a transcript into a spoken reply.
@@ -10,13 +11,23 @@ import { logMetric } from "./metrics.js";
  * setup flow, or a pending news-headline choice. Returns:
  *   { speak, segments?, action?, expectReply, replyTimeoutMs?, setup, newsFlow, tier }
  */
-export async function handleCommand(text, session = {}) {
+export async function handleCommand(text, session = {}, meta = {}) {
   const t0 = Date.now();
+
+  const remember = (r, tier, tool) =>
+    logTurn({
+      role: "assistant",
+      text: r?.speak,
+      tier,
+      tool,
+      sessionId: meta.sessionId,
+    }).catch(() => {});
 
   // Mid-setup: the last reply asked a question, so treat this as the answer.
   if (session.setup) {
     const r = await runSetupStep(session.setup, text);
     logMetric({ kind: "setup", text, totalMs: Date.now() - t0 });
+    remember(r, 0, "setup");
     return { ...pack(r), tier: 0 };
   }
 
@@ -24,8 +35,12 @@ export async function handleCommand(text, session = {}) {
   if (session.newsFlow) {
     const r = await continueNewsFlow(session.newsFlow, text);
     logMetric({ kind: "news_choice", text, totalMs: Date.now() - t0 });
+    remember(r, 0, "news_choice");
     return { ...pack(r), tier: 0 };
   }
+
+  // A real command (not a setup/news follow-up) — remember what was said.
+  logTurn({ role: "user", text, sessionId: meta.sessionId }).catch(() => {});
 
   const routed = await route(text);
   const tRoute = Date.now();
@@ -49,6 +64,7 @@ export async function handleCommand(text, session = {}) {
     totalMs: tDone - t0,
   });
 
+  remember(result, routed.tier ?? -1, routed.tool ?? null);
   return { ...pack(result), tier: routed.tier ?? -1 };
 }
 

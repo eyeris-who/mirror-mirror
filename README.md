@@ -156,13 +156,15 @@ voice/main.py ──► POST /api/command {text}
                        │
                   server/agent/index.js
                        │
-                  router.js  ── tier 0: regex patterns     (0 ms, $0, offline)
-                       │      ── tier 1: Ollama local model (~300 ms, $0, offline)
-                       │      ── tier 2: Claude             (~1 s, paid, online)
+                  router.js  ── tier 0: regex patterns          (0 ms, $0, offline)
+                       │      ── tier 1: Ollama local model      (~1 s, $0, offline)
+                       │      ── tier 2: Claude                  (~1 s, paid, online)
                        │
-                  tools.js  ── get_time · get_date · get_weather(when)
-                              get_schedule(range) · play_playlist(name)
-                              run_morning_routine · open_setup
+                  tools.js  ── ~20 tools, real JSON schemas: get_weather(when),
+                              get_schedule(range), play_playlist, get_news,
+                              set_reminder, recall(query), add_note, … — the
+                              LLM tiers pick and chain them; a failed/uncertain
+                              tool degrades gracefully rather than crashing
 ```
 
 **Hybrid router** — a request stops at the first tier that can answer it. Every
@@ -192,13 +194,100 @@ voice-service restart.
 | "what are my reminders" · "clear my reminders" | list / cancel |
 | "go to sleep" / "turn off the display" / "goodnight" | fades the mirror to black (music + voice keep running; tap the screen or say "wake up" to bring it back) |
 | "wake up" / "turn on the display" | brings the mirror back |
+| "note that…" · "remember that…" · "journal:…" | saves a note / journal entry into memory |
+| "what did I say about…" · "have I mentioned…" · "when did I…" | recalls from your own past — see Personal memory |
 | "start my morning routine" | date → time → weather → events → **3 headlines** (7s to pick one, else) → playlist. Also wakes the display. |
 | "setup" | spoken questionnaire |
 
+<<<<<<< HEAD
 Reminders show on the mirror (right column) and are spoken when due — the server
 wakes the mirror and queues them at `/api/voice/announcements`, which the voice
 service polls between wake-word listens. Reminders are stored in
 `server/data/reminders.json` (gitignored).
+=======
+Reminders show on the mirror and are spoken when due — the server wakes the
+mirror and queues them at `/api/voice/announcements`, which the voice service
+polls between wake-word listens. Stored in `server/data/reminders.json`
+(gitignored).
+
+## Personal memory (RAG)
+
+The mirror remembers **your own stuff** — never external documents:
+
+| Source | How it gets in |
+|---|---|
+| Past conversations | every voice exchange is appended to `server/data/memory/conversations.jsonl` |
+| Spoken notes / journal | "note that…", "journal:…" → `notes.jsonl` |
+| Text files | drop `.md` / `.txt` in the project-root `notes/` folder |
+| Calendar history | last 90 days of events, if `MEMORY_INDEX_CALENDAR=1` |
+
+```
+ingest.js  chunk + dedupe + incremental cursors
+   │
+embed.js   nomic-embed-text via Ollama  ── LOCAL: personal data never leaves the box
+   │
+sqlite-vec  one file, no server (node:sqlite + prebuilt extension, zero native build)
+   │
+search.js  KNN 40 (vec0 cosine)  →  time-window filter (chrono parses "last week")
+   │        →  re-rank by  cosine × (0.4 + 0.6 · 0.5^(age / 14d))  →  top 6
+recall.js  synthesize from the dated excerpts — local model first, cloud only on
+           fallback and only the snippets, never the corpus
+```
+
+Query turns are **not** indexed back into memory: a "what did I say about…"
+question, a note-taking command (the note itself is already stored), or anything
+the assistant couldn't answer is skipped by the ingester, so the store stays
+signal.
+
+**Hard parts, handled:**
+- *Recency* — recency-weighted score, plus a hard time filter when the question
+  says "this month" / "last week".
+- *Contradiction* — excerpts are dated and the synthesizer is told to trust the
+  most recent and say when things changed ("you needed milk, but you picked it
+  up on the 8th").
+- *Privacy* — embeddings **and** synthesis are local by default;
+  `MEMORY_LOCAL_ONLY=1` refuses the cloud entirely.
+
+### Setup
+
+```bash
+ollama pull nomic-embed-text     # embeddings (~275 MB), always local
+ollama pull llama3.2:3b          # router + memory synthesis, ~2s answers
+# optional: ollama pull qwen3:8b, then set OLLAMA_MODEL=qwen3:8b for better
+# answers at ~15s — the mirror falls back to reading the raw excerpt if the
+# model is slow or down, and to Claude only if a key is set.
+```
+
+Conversation logging is automatic. `POST /api/memory/reindex` forces a pass;
+`GET /api/memory/status` shows chunk counts; `GET /api/memory/search?q=…` shows
+raw retrieval without synthesis.
+
+### Eval
+
+```bash
+npm --prefix server run eval:memory              # recall@k + MRR on a fixture corpus
+npm --prefix server run eval:report              # latency per stage from real usage
+npm --prefix server run eval:report -- --since 24h   # …last 24h only
+```
+
+`eval:memory` builds a synthetic personal corpus, indexes it, and scores
+retrieval against `server/eval/questions.json` (writes `server/eval/results.md`).
+`eval:report` rolls up `metrics.jsonl` — STT / router / retrieval / synthesis
+latency percentiles, STT confidence, and how often each router tier fired.
+
+Measured on a laptop (16-item corpus, `--since` window of clean runs):
+
+| stage | p50 | p90 | notes |
+|---|---:|---:|---|
+| memory: embed query (`nomic-embed-text`) | 17 ms | 20 ms | local |
+| memory: vector search (`sqlite-vec` KNN 40) | 6 ms | 6 ms | local |
+| memory: synthesis (`llama3.2:3b`) | 1.8 s | 2.4 s | local; 0 cloud calls |
+| recall end-to-end (route → spoken answer) | 1.7 s | 2.5 s | |
+| retrieval quality | recall@1 **75%** · recall@6 **100%** · MRR **0.88** | | |
+| router tier split | tier-0 rules **85%** · tier-1 local **15%** · cloud 0% | | |
+| STT (`faster-whisper base`) | 6.1 s | 9.8 s | dominates e2e latency |
+| STT confidence (`e^avg_logprob · (1−p_no_speech)`) | mean **0.6** | | flags low-confidence turns |
+>>>>>>> 134f5db (add RAG stuff)
 
 ## APIs & auth — what each feature needs
 
@@ -208,6 +297,8 @@ service polls between wake-word listens. Reminders are stored in
 | Calendar | Google Calendar API | OAuth (browser, one-time) | free |
 | News | Publisher RSS (BBC, The Verge, Ars, ESPN) + readability extraction | none | free |
 | Reminders | `chrono-node` (local NL time parsing) | none | free |
+| Memory embeddings | Ollama + `nomic-embed-text` | none | free, local |
+| Memory vector store | `sqlite-vec` (`node:sqlite`, prebuilt extension) | none | free, local |
 | Music (default) | Audius | none | free |
 | Music (if linked) | Spotify Web API + Playback SDK | OAuth (browser) + **Premium** | free API, paid account |
 | Speech-to-text | faster-whisper | none (downloads model weights) | free, local |

@@ -16,6 +16,7 @@ import * as reminders from "./reminders.js";
 import * as llm from "./agent/llm.js";
 import { handleCommand } from "./agent/index.js";
 import { logMetric } from "./agent/metrics.js";
+import * as memory from "./memory/index.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -270,7 +271,7 @@ app.post("/api/command", async (req, res) => {
 
   try {
     const session = sessions.get(sessionId) ?? {};
-    const out = await handleCommand(text.trim(), session);
+    const out = await handleCommand(text.trim(), session, { sessionId });
 
     if (out.setup) sessions.set(sessionId, { setup: out.setup });
     else if (out.newsFlow) sessions.set(sessionId, { newsFlow: out.newsFlow });
@@ -370,6 +371,26 @@ armReminderTimer();
 app.get("/api/news/categories", (_req, res) =>
   res.json({ categories: news.CATEGORIES }),
 );
+
+// ---- memory (personal RAG) --------------------------------------
+app.get("/api/memory/status", async (_req, res) => {
+  res.json(await memory.status());
+});
+
+app.post("/api/memory/reindex", async (_req, res) => {
+  res.json(await memory.ingest());
+});
+
+// Retrieval only — inspect what would be recalled, no synthesis.
+app.get("/api/memory/search", async (req, res) => {
+  try {
+    res.json(await memory.search(String(req.query.q ?? "")));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+memory.startIngestLoop();
 
 app
   .listen(PORT, () => console.log(`mirror server on http://localhost:${PORT}`))

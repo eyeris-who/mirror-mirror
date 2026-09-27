@@ -1,6 +1,7 @@
 import { getSettings } from "../settings.js";
 import { TOOLS } from "./tools.js";
 import * as llm from "./llm.js";
+import { RECALL_RE } from "./patterns.js";
 
 /**
  * Hybrid router. Three tiers, cheapest first:
@@ -27,6 +28,24 @@ function tier0(text) {
 
   if (/morning routine|start (my )?(morning|day)|^good morning\b/.test(t))
     return { tier: 0, tool: "run_morning_routine" };
+
+  // --- memory: take a note ---
+  {
+    const m = text.match(
+      /^\s*(?:hey mirror[,\s]*)?(?:(?:please )?(?:take a |make a )?note[:\s]+(?:that\s+)?|remember that\s+|(journal)[:\s]+(?:that\s+)?|(?:add (?:a |an )?journal entry[:\s]+))(.+)/i,
+    );
+    if (m) {
+      return {
+        tier: 0,
+        tool: "add_note",
+        args: { text: m[2].trim(), journal: Boolean(m[1]) },
+      };
+    }
+  }
+
+  // --- memory: recall a past thing the user said / noted ---
+  if (RECALL_RE.test(t))
+    return { tier: 0, tool: "recall", args: { query: text } };
 
   // --- display sleep / wake ---
   if (

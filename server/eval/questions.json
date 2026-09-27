@@ -1,0 +1,40 @@
+[
+  {
+    "q": "what did I need from the store?",
+    "expect": ["milk", "eggs", "coffee filters"],
+    "note": "3 statements over 2 weeks; the latest says the fridge is stocked — recency + contradiction"
+  },
+  {
+    "q": "have I mentioned feeling stressed or anxious recently?",
+    "expect": ["burned out", "anxious about the presentation"],
+    "note": "mood retrieval across journal + conversation"
+  },
+  {
+    "q": "when is Alex's birthday and what does he like?",
+    "expect": ["October 14", "single origin coffee"],
+    "note": "fact lookup from a spoken note"
+  },
+  {
+    "q": "what did my manager say about my workload?",
+    "expect": ["moving two projects", "reshuffle"],
+    "note": "the resolution is more recent than the complaint"
+  },
+  {
+    "q": "what book was I supposed to read?",
+    "expect": ["The Overstory"],
+    "note": "single-hop fact"
+  },
+  {
+    "q": "did I say anything about the car?",
+    "expect": ["rattling noise when I brake"]
+  },
+  {
+    "q": "what's renewing soon?",
+    "expect": ["passport", "parking permit"],
+    "note": "multiple matches, different dates"
+  },
+  {
+    "q": "what did I decide about exercise?",
+    "expect": ["running", "Tuesday and Thursday"]
+  }
+]

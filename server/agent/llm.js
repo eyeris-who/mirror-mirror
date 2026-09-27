@@ -9,7 +9,7 @@ const SYSTEM = `You are the voice of a smart mirror. Pick the single tool that a
 export async function localAvailable() {
   try {
     const r = await fetch(`${OLLAMA_URL}/api/tags`, {
-      signal: AbortSignal.timeout(600),
+      signal: AbortSignal.timeout(1500),
     });
     return r.ok;
   } catch {
@@ -37,6 +37,7 @@ export async function localToolCall({ model, text, tools }) {
       })),
       temperature: 0,
       stream: false,
+      chat_template_kwargs: { enable_thinking: false },
     }),
     signal: AbortSignal.timeout(20000),
   });
@@ -90,6 +91,42 @@ export async function cloudToolCall({ model, text, tools, context }) {
 
   const textBlock = msg.content.find((b) => b.type === "text");
   return { text: (textBlock?.text ?? "").trim(), confident: true };
+}
+
+// ---- plain chat (used by the memory synthesizer) ----------------------
+
+export async function localChat({ model, system, prompt, timeoutMs = 25000 }) {
+  const res = await fetch(`${OLLAMA_URL}/v1/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [
+        ...(system ? [{ role: "system", content: system }] : []),
+        { role: "user", content: prompt },
+      ],
+      temperature: 0,
+      stream: false,
+      // qwen3 and other hybrid-reasoning models: skip the <think> pass so recall
+      // stays snappy. Ignored by models that don't support it.
+      chat_template_kwargs: { enable_thinking: false },
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new Error(`ollama chat ${res.status}`);
+  const data = await res.json();
+  return (data.choices?.[0]?.message?.content ?? "").trim();
+}
+
+export async function cloudChat({ model, system, prompt }) {
+  const msg = await client().messages.create({
+    model,
+    max_tokens: 400,
+    output_config: { effort: "low" },
+    system,
+    messages: [{ role: "user", content: prompt }],
+  });
+  return (msg.content.find((b) => b.type === "text")?.text ?? "").trim();
 }
 
 function safeParse(s) {

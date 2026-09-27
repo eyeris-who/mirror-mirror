@@ -1,0 +1,42 @@
+{
+  "sapi-hey-mirror-what-s-the-weather.wav": {
+    "spoken": "hey mirror, what's the weather",
+    "expect": "what's the weather",
+    "source": "sapi"
+  },
+  "sapi-hey-mirror.wav": {
+    "spoken": "hey mirror",
+    "expect": "",
+    "source": "sapi"
+  },
+  "sapi-hey-mirror-remind-me-in-one-minute-to-brush-teet.wav": {
+    "spoken": "hey mirror, remind me in one minute to brush teeth",
+    "expect": "remind me in one minute to brush teeth",
+    "source": "sapi"
+  },
+  "sapi-hey-mirror-play-some-lofi.wav": {
+    "spoken": "hey mirror, play some lofi",
+    "expect": "play some lofi",
+    "source": "sapi"
+  },
+  "sapi-hey-mirror-play-trending-lofi.wav": {
+    "spoken": "hey mirror, play trending lofi",
+    "expect": "play trending lofi",
+    "source": "sapi"
+  },
+  "sapi-mirror-what-time-is-it.wav": {
+    "spoken": "mirror, what time is it",
+    "expect": "what time is it",
+    "source": "sapi"
+  },
+  "sapi-what-s-the-time.wav": {
+    "spoken": "what's the time",
+    "expect": null,
+    "source": "sapi"
+  },
+  "sapi-turn-on-the-tv-in-the-living-room.wav": {
+    "spoken": "turn on the TV in the living room",
+    "expect": null,
+    "source": "sapi"
+  }
+}

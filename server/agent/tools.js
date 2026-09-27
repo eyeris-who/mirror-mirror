@@ -5,6 +5,7 @@ import * as musicctl from "../musicctl.js";
 import * as display from "../display.js";
 import * as news from "../news.js";
 import * as reminders from "../reminders.js";
+import * as memory from "../memory/index.js";
 
 // Every tool returns { speak: string, data?, action?, segments? }.
 // `speak` is read aloud. `data` is for the mirror HUD. `segments` is used by
@@ -167,6 +168,32 @@ async function whatsPlaying() {
   if (!title) return { speak: "Nothing's playing right now." };
   const artist = t?.artist || t?.artists;
   return { speak: artist ? `${title}, by ${artist}.` : title };
+}
+
+// ---- memory ---------------------------------------------------------
+
+async function recallMemory({ query } = {}) {
+  if (!query || query.trim().length < 3) {
+    return { speak: "What would you like me to look up?" };
+  }
+  try {
+    return await memory.recall(query);
+  } catch (err) {
+    if (err.name === "MemoryNotReady") {
+      return {
+        speak:
+          "My memory isn't running yet. Start Ollama and pull nomic-embed-text — it's in the README.",
+      };
+    }
+    return { speak: "I couldn't search my memory just now." };
+  }
+}
+
+async function addNote({ text, journal } = {}) {
+  const body = (text || "").trim();
+  if (body.length < 2) return { speak: "What should I note?" };
+  await memory.addNote(body, journal ? "journal" : "note");
+  return { speak: journal ? "Added to your journal." : "Noted." };
 }
 
 function sleepDisplay() {
@@ -533,6 +560,28 @@ export const TOOLS = [
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
+    name: "recall",
+    description:
+      "Answer a question about the user's own past — things they've said to the mirror, notes and journal entries, calendar history. Use for 'what did I say about…', 'have I mentioned…', 'when did I…'. `query` is the user's full question.",
+    input_schema: {
+      type: "object",
+      properties: { query: { type: "string" } },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "add_note",
+    description:
+      "Save a note or journal entry the user dictates ('note that…', 'remember that…', 'journal:…'). `text` is what to save; set `journal` true for a journal entry.",
+    input_schema: {
+      type: "object",
+      properties: { text: { type: "string" }, journal: { type: "boolean" } },
+      required: ["text"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "sleep_display",
     description:
       "Fade the mirror to black (screen off / sleep / goodnight). Music and voice keep running.",
@@ -563,6 +612,8 @@ const IMPL = {
   next_track: nextTrack,
   previous_track: prevTrack,
   whats_playing: whatsPlaying,
+  recall: recallMemory,
+  add_note: addNote,
   get_news: getNewsSpoken,
   set_news_category: setNewsCategory,
   set_reminder: setReminder,

@@ -105,4 +105,17 @@ class Ears:
 
     def transcribe(self, audio):
         segments, _ = self.model.transcribe(audio, language="en", beam_size=1)
-        return " ".join(s.text for s in segments).strip()
+        segs = list(segments)
+        self.last_confidence = _confidence(segs)  # 0..1, for observability
+        return " ".join(s.text for s in segs).strip()
+
+
+def _confidence(segs):
+    """Rough transcription confidence from Whisper's own logprobs."""
+    if not segs:
+        return 0.0
+    import math
+
+    lp = sum(getattr(s, "avg_logprob", -1.0) for s in segs) / len(segs)
+    nsp = sum(getattr(s, "no_speech_prob", 0.0) for s in segs) / len(segs)
+    return round(max(0.0, min(1.0, math.exp(lp) * (1.0 - nsp))), 3)

@@ -28,9 +28,18 @@ const DEFAULTS = {
     morningRoutine: ["date", "time", "weather", "events", "news", "playlist"],
     // Which model handles which tier — see server/agent/router.js.
     models: {
-      local: process.env.OLLAMA_MODEL || "qwen3:8b",
+      // Small + fast: the router and memory synthesizer need low latency, not
+      // deep reasoning. Bump to qwen3:8b via OLLAMA_MODEL if you want quality
+      // over speed and don't mind ~15s answers.
+      local: process.env.OLLAMA_MODEL || "llama3.2:3b",
       cloud: process.env.CLOUD_MODEL || "claude-opus-5",
     },
+  },
+  memory: {
+    topK: 6,
+    // When true, never send retrieved snippets to the cloud model — recall
+    // answers only when the local model is available.
+    localOnly: process.env.MEMORY_LOCAL_ONLY === "1",
   },
 };
 
@@ -52,6 +61,7 @@ async function load() {
           ...(saved.assistant?.models ?? {}),
         },
       },
+      memory: { ...DEFAULTS.memory, ...(saved.memory ?? {}) },
     };
     // Migrate a routine saved before the "news" step existed.
     const r = mem.assistant.morningRoutine;

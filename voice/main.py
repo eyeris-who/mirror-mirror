@@ -177,6 +177,7 @@ def main():
                     "sttMs": stt_ms,
                     "ttsMs": tts_ms,
                     "tier": reply.get("tier"),
+                    "sttConfidence": getattr(ears, "last_confidence", None),
                 },
                 timeout=2,
             )
