@@ -3,9 +3,8 @@
 device come from the environment."""
 
 import os
-import requests
 
-SERVER = os.environ.get("MIRROR_SERVER", "http://localhost:3001")
+SERVER = os.environ.get("MIRROR_SERVER", "http://127.0.0.1:3001")
 
 DEFAULTS = {
     "wakePhrase": "mirror mirror on the wall",
@@ -16,6 +15,8 @@ DEFAULTS = {
 def load():
     cfg = dict(DEFAULTS)
     try:
+        import requests  # here, so importing config needs no third-party packages
+
         r = requests.get(f"{SERVER}/api/settings", timeout=3)
         a = r.json().get("assistant", {}) or {}
         cfg["wakePhrase"] = a.get("wakePhrase") or cfg["wakePhrase"]
@@ -24,7 +25,8 @@ def load():
         print(f"[config] couldn't read server settings, using defaults ({e})")
 
     cfg["server"] = SERVER
-    # tiny.en / base.en / small.en — bigger = more accurate, slower.
+    # tiny.en / base.en / distil-small.en / small.en — bigger = more accurate,
+    # slower. distil-small.en is the best accuracy-per-ms step up from base.en.
     cfg["whisper_model"] = os.environ.get("WHISPER_MODEL", "base.en")
     cfg["input_device"] = os.environ.get("MIRROR_MIC")  # None = system default
     return cfg

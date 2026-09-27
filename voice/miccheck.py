@@ -31,7 +31,7 @@ def list_devices():
 
 
 def meter(device, seconds=8):
-    print(f"\nLevel meter for {seconds}s — talk normally, say 'mirror mirror on the wall':")
+    print(f"\nLevel meter for {seconds}s — talk normally, say your wake phrase:")
     peak = 0.0
     with sd.InputStream(samplerate=SR, blocksize=FRAME, dtype="int16",
                         channels=1, device=device) as s:
@@ -54,21 +54,28 @@ def meter(device, seconds=8):
 
 
 def record_test(device, seconds=4):
-    from faster_whisper import WhisperModel
+    # Same model, decoding and wake matching as main.py, so this is a real test.
+    from config import load
+    from listen import Ears
+    from wake import split_on_wake, wake_score
 
-    model_name = os.environ.get("WHISPER_MODEL", "base.en")
-    print(f"\nLoading whisper '{model_name}'…")
-    model = WhisperModel(model_name, device="cpu", compute_type="int8")
+    cfg = load()
+    phrase = cfg["wakePhrase"]
+    ears = Ears(cfg["whisper_model"], device, phrase)
 
-    print(f"Recording {seconds}s NOW — say: \"mirror mirror on the wall, what's the weather\"")
+    print(f"Recording {seconds}s NOW — say: \"{phrase}, what's the weather\"")
     audio = sd.rec(int(seconds * SR), samplerate=SR, channels=1, dtype="float32",
                    device=device)
     sd.wait()
-    segments, _ = model.transcribe(audio[:, 0], language="en", beam_size=1)
-    text = " ".join(s.text for s in segments).strip()
-    print(f"\ntranscript: {text!r}")
+    text = ears.transcribe(audio[:, 0])
+    print(f"\ntranscript: {text!r}  ({ears.last_stt_ms}ms, confidence {ears.last_confidence})")
     if not text:
         print("  -> whisper heard nothing. Check the level meter result above.")
+        return
+    cmd = split_on_wake(text, phrase)
+    print(f"wake match: score {wake_score(text, phrase)}  command {cmd!r}")
+    if cmd is None:
+        print("  -> wake phrase not recognized. Try again, or lower wake.THRESHOLD.")
 
 
 if __name__ == "__main__":

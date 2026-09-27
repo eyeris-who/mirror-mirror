@@ -7,8 +7,11 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
+    "test": "node --test \"test/*.test.js\"",
     "eval:memory": "node eval/run.mjs",
-    "eval:report": "node eval/report.mjs"
+    "eval:report": "node eval/report.mjs",
+    "eval:router": "node eval/router.mjs",
+    "redact-logs": "node scripts/redact-logs.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

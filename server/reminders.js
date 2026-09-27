@@ -39,7 +39,12 @@ async function persist() {
 export function parse(phrase) {
   const cleaned = phrase
     .replace(/^\s*(hey mirror[,\s]*)?/i, "")
-    .replace(/^\s*(set (a )?reminder( to| for| that)?|remind me( to| that| about)?)\s*/i, "")
+    // "remind me to…", "set a reminder for…", and the forms speech-to-text
+    // leaves when it clips the start: "reminder in two minutes…", "me in one minute…"
+    .replace(
+      /^\s*((?:set|make) (?:a |an )?reminder( to| for| that)?|remind me( to| that| about)?|(?:a |the )?reminder( to| for| that)?|remind( to)?|me(?= in\b))\s*/i,
+      "",
+    )
     .trim();
 
   const results = chrono.parse(cleaned, new Date(), { forwardDate: true });
@@ -59,7 +64,9 @@ export function parse(phrase) {
     (cleaned.slice(0, r.index) + cleaned.slice(r.index + r.text.length))
       .replace(/\b(at|on|by|around|this|next)\s*$/i, "")
       .replace(/\s{2,}/g, " ")
-      .replace(/^[\s,]+|[\s,]+$/g, "")
+      .replace(/^[\s,]+|[\s,.!?]+$/g, "")
+      // "remind me in 5 minutes to stretch" leaves "to stretch" -> "stretch"
+      .replace(/^(to|that|about)\s+/i, "")
       .trim() || "your reminder";
 
   return { text, at: at.toISOString() };

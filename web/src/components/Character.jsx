@@ -1,46 +1,73 @@
-import { useEffect, useRef, useState } from "react";
-import { usePolling } from "../hooks/usePolling.js";
+import { useEffect, useState } from "react";
+import { useServerEvents } from "../hooks/useServerEvents.js";
 
 /**
- * Placeholder for the animated character. It already computes the live state —
- * drop the animation runtime in where noted and drive it from `state`.
+ * The mirror's face: a light line drawing (black is invisible through a
+ * two-way mirror) animated entirely in CSS from `data-state`.
  *
- * States: "idle" | "talking" | "sleeping" | "going to sleep" | "waking up"
+ * States: "idle" | "listening" | "thinking" | "talking" | "sleeping"
+ *         | "going to sleep" | "waking up"
  */
 export default function Character() {
-  const { data: display } = usePolling("/api/display", 2000);
-  const { data: voice } = usePolling("/api/voice/state", 1000);
+  const { display, voice } = useServerEvents();
 
   const awake = display?.on !== false;
-  const [transition, setTransition] = useState(null);
-  const prevAwake = useRef(awake);
 
+  // Start the sleep/wake transition in the same render the change arrives in
+  // (an effect would paint one frame of the old state first). The first value
+  // from the server isn't a change, so loading the page while asleep doesn't
+  // play "going to sleep".
+  const [phase, setPhase] = useState({ awake: null, transition: null });
+  if (display != null && phase.awake !== awake) {
+    setPhase({
+      awake,
+      transition: phase.awake === null ? null : awake ? "waking up" : "going to sleep",
+    });
+  }
   useEffect(() => {
-    if (display == null || awake === prevAwake.current) return;
-    setTransition(awake ? "waking up" : "going to sleep");
-    prevAwake.current = awake;
-    const t = setTimeout(() => setTransition(null), 1600);
+    if (!phase.transition) return;
+    const t = setTimeout(() => setPhase((p) => ({ ...p, transition: null })), 1600);
     return () => clearTimeout(t);
-  }, [awake, display]);
+  }, [phase]);
 
-  const state = transition
-    ? transition
+  const v = voice?.state;
+  const state = phase.transition
+    ? phase.transition
     : !awake
       ? "sleeping"
-      : voice?.state === "speaking"
+      : v === "speaking"
         ? "talking"
-        : "idle";
+        : v === "listening" || v === "wake"
+          ? "listening"
+          : v === "thinking"
+            ? "thinking"
+            : "idle";
 
   return (
-    <div className="character" data-state={state}>
-      {/* --- swap this box for the animation ---
-          Rive:   <Rive src="/character.riv" stateMachines="mirror" ... />
-          Lottie: <Lottie animationData={clips[state]} loop /> (cross-fade on change)
-      */}
-      <div className="character__box">
-        <span className="character__label">Character</span>
-        <span className="character__state">{state}</span>
-      </div>
+    <div className="character" data-state={state} role="img" aria-label={`mirror is ${state}`}>
+      <svg className="character__face" viewBox="0 0 200 150" aria-hidden="true">
+        <circle className="character__halo" cx="100" cy="75" r="56" />
+        <circle className="character__ring" cx="100" cy="75" r="56" />
+
+        <g className="character__eyes">
+          <ellipse className="character__eye" cx="80" cy="68" rx="6.5" ry="10" />
+          <ellipse className="character__eye" cx="120" cy="68" rx="6.5" ry="10" />
+        </g>
+
+        <path className="character__smile" d="M86 97 Q100 106 114 97" />
+        <ellipse className="character__mouth" cx="100" cy="99" rx="9" ry="6" />
+
+        <g className="character__dots">
+          <circle cx="88" cy="112" r="2.4" />
+          <circle cx="100" cy="112" r="2.4" />
+          <circle cx="112" cy="112" r="2.4" />
+        </g>
+
+        <g className="character__z">
+          <text x="146" y="44">z</text>
+          <text x="158" y="28">z</text>
+        </g>
+      </svg>
     </div>
   );
 }

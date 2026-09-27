@@ -40,6 +40,9 @@ const DEFAULTS = {
     // When true, never send retrieved snippets to the cloud model — recall
     // answers only when the local model is available.
     localOnly: process.env.MEMORY_LOCAL_ONLY === "1",
+    // Drop conversation memories (not notes/journal) older than this many
+    // days, from the index and conversations.jsonl. 0 = keep forever.
+    retentionDays: Number(process.env.MEMORY_RETENTION_DAYS || 0),
   },
 };
 

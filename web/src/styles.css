@@ -55,35 +55,182 @@ body {
   z-index: 50;
 }
 
-/* ---- character (placeholder) — after the reminders in the DOM, but pinned to
-   the bottom-right corner with the same margin as the panels ---- */
+/* Burn-in guard: App nudges the whole layout a few pixels every few minutes. */
+.mirror {
+  transition: transform 6s ease-in-out;
+}
+
+/* ---- character — after the reminders in the DOM, but pinned to the
+   bottom-right corner with the same margin as the panels. Pure CSS animation
+   driven by data-state; light strokes only (black is invisible in a mirror). */
 .character {
   position: fixed;
   right: var(--pad);
   bottom: var(--pad);
   z-index: 40;
-}
-.character__box {
   width: var(--right-col);
   aspect-ratio: 4 / 3;
-  border: 1px dashed var(--fg-dim);
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6em;
-  color: var(--fg-dim);
+  transition: opacity 1.2s ease;
 }
-.character__label {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
+.character__face {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  animation: char-float 6s ease-in-out infinite;
 }
-.character__state {
-  font-size: clamp(1.1rem, 2.4vw, 1.5rem);
-  color: var(--fg);
-  text-transform: lowercase;
+.character__face * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.character__halo {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 2;
+  opacity: 0.55;
+}
+.character__ring {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 1.5;
+  opacity: 0;
+}
+.character__eye {
+  fill: var(--fg);
+  transition: transform 0.35s ease;
+  animation: char-blink 5.5s infinite;
+}
+.character__eye + .character__eye {
+  animation-delay: 0.04s;
+}
+.character__smile {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: opacity 0.2s ease;
+}
+.character__mouth {
+  fill: var(--fg);
+  opacity: 0;
+  transform: scaleY(0.2);
+}
+.character__dots circle {
+  fill: var(--fg);
+  opacity: 0;
+}
+.character__z text {
+  fill: var(--fg-dim);
+  font-size: 16px;
+  font-style: italic;
+  opacity: 0;
+}
+
+/* listening — wide eyes, a ring breathing outward */
+.character[data-state="listening"] .character__eye {
+  animation: none;
+  transform: scale(1.15);
+}
+.character[data-state="listening"] .character__ring {
+  animation: char-ring 1.6s ease-out infinite;
+}
+
+/* thinking — eyes glance up, dots take turns */
+.character[data-state="thinking"] .character__eye {
+  animation: none;
+  transform: translate(3px, -5px) scaleY(0.8);
+}
+.character[data-state="thinking"] .character__smile {
+  opacity: 0;
+}
+.character[data-state="thinking"] .character__dots circle {
+  animation: char-dot 1.2s ease-in-out infinite;
+}
+.character[data-state="thinking"] .character__dots circle:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.character[data-state="thinking"] .character__dots circle:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* talking — the mouth opens and closes */
+.character[data-state="talking"] .character__smile {
+  opacity: 0;
+}
+.character[data-state="talking"] .character__mouth {
+  opacity: 1;
+  animation: char-talk 0.32s ease-in-out infinite alternate;
+}
+
+/* sleeping — eyes shut, dimmed, z's drifting up */
+.character[data-state="sleeping"] {
+  opacity: 0.45;
+}
+.character[data-state="sleeping"] .character__face,
+.character[data-state="going to sleep"] .character__face {
+  animation-duration: 10s;
+}
+.character[data-state="sleeping"] .character__eye {
+  animation: none;
+  transform: scaleY(0.08);
+}
+.character[data-state="sleeping"] .character__z text {
+  animation: char-z 3.2s ease-in infinite;
+}
+.character[data-state="sleeping"] .character__z text + text {
+  animation-delay: 1.6s;
+}
+
+/* transitions between awake and asleep */
+.character[data-state="going to sleep"] .character__eye {
+  animation: char-close 1.5s ease-in forwards;
+}
+.character[data-state="waking up"] .character__eye {
+  animation: char-open 1.5s ease-out forwards;
+}
+
+@keyframes char-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes char-blink {
+  0%, 94%, 100% { transform: scaleY(1); }
+  97% { transform: scaleY(0.1); }
+}
+@keyframes char-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+@keyframes char-dot {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 1; }
+}
+@keyframes char-talk {
+  from { transform: scaleY(0.25); }
+  to { transform: scaleY(1); }
+}
+@keyframes char-z {
+  0% { opacity: 0; transform: translate(0, 6px); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translate(8px, -14px); }
+}
+@keyframes char-close {
+  0% { transform: scaleY(1); }
+  40% { transform: scaleY(0.5); }
+  55% { transform: scaleY(0.7); }
+  100% { transform: scaleY(0.08); }
+}
+@keyframes char-open {
+  0% { transform: scaleY(0.08); }
+  45% { transform: scaleY(0.6); }
+  60% { transform: scaleY(0.3); }
+  100% { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .character *,
+  .character__face {
+    animation: none !important;
+  }
 }
 
 .col {
@@ -513,6 +660,42 @@ body {
   font-size: 0.85em;
   color: var(--fg-dim);
   padding: 0.4rem 0;
+}
+.setup__memory {
+  list-style: none;
+  padding: 0;
+  max-height: 24rem;
+  overflow-y: auto;
+  border-top: 1px solid #222;
+}
+.setup__memory li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "meta btn"
+    "text btn";
+  gap: 0.1rem 0.8rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #222;
+}
+.setup__memory-meta {
+  grid-area: meta;
+  font-size: 0.75em;
+  color: var(--fg-dim);
+}
+.setup__memory-text {
+  grid-area: text;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.setup__memory button {
+  grid-area: btn;
+  align-self: center;
+  min-width: 4.5rem;
+}
+.setup .setup__danger {
+  border-color: #d9534f;
+  color: #ff8a80;
 }
 
 /* ---- voice HUD (bottom overlay on the mirror) ---- */

@@ -1,6 +1,10 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import http from "node:http";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { getWeather, clearCache as clearWeatherCache } from "./weather.js";
 import { getSchedule } from "./schedule.js";
 import { getSettings, setLocation, updateAssistant } from "./settings.js";
@@ -15,14 +19,28 @@ import * as news from "./news.js";
 import * as reminders from "./reminders.js";
 import * as llm from "./agent/llm.js";
 import { handleCommand } from "./agent/index.js";
+import { warmLocalRouter } from "./agent/router.js";
 import { logMetric } from "./agent/metrics.js";
 import * as memory from "./memory/index.js";
+import * as events from "./events.js";
+import { accessPolicy } from "./security.js";
 
+const here = dirname(fileURLToPath(import.meta.url));
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT || 3001);
 const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:5173";
+// Loopback only by default: the page, the voice service and this server all
+// run on the mirror itself, and this API hands out personal memory.
+const HOST = process.env.HOST || "";
 
-app.use(cors());
+// Host + Origin checks — see security.js for why both.
+const access = accessPolicy({
+  webOrigin: WEB_ORIGIN,
+  port: PORT,
+  allowedHosts: process.env.ALLOWED_HOSTS,
+});
+app.use(access.middleware);
+app.use(cors({ origin: access.origins }));
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -262,20 +280,36 @@ app.get("/api/music/audius/search", async (req, res) => {
 });
 
 // ---- voice / assistant ---------------------------------------------
-// Per-caller conversation state (just an in-progress setup flow for now).
+// Per-caller conversation state: rolling history, plus any in-progress setup or
+// news-choice flow. Dropped after a lull so a new conversation starts clean.
 const sessions = new Map();
+const SESSION_TTL_MS = 5 * 60_000;
+
+function sweepSessions() {
+  const cutoff = Date.now() - SESSION_TTL_MS;
+  for (const [id, s] of sessions) if ((s.updatedAt ?? 0) < cutoff) sessions.delete(id);
+}
 
 app.post("/api/command", async (req, res) => {
   const { text, sessionId = "default" } = req.body ?? {};
-  if (!text || !text.trim()) return res.status(400).json({ error: "no_text" });
+  if (typeof text !== "string" || !text.trim())
+    return res.status(400).json({ error: "no_text" });
 
   try {
-    const session = sessions.get(sessionId) ?? {};
+    sweepSessions();
+    const prev = sessions.get(sessionId);
+    const session =
+      prev && Date.now() - (prev.updatedAt ?? 0) < SESSION_TTL_MS
+        ? prev
+        : { history: [] };
+
     const out = await handleCommand(text.trim(), session, { sessionId });
 
-    if (out.setup) sessions.set(sessionId, { setup: out.setup });
-    else if (out.newsFlow) sessions.set(sessionId, { newsFlow: out.newsFlow });
-    else sessions.delete(sessionId);
+    session.setup = out.setup ?? null;
+    session.newsFlow = out.newsFlow ?? null;
+    session.forgetFlow = out.forgetFlow ?? null;
+    session.updatedAt = Date.now();
+    sessions.set(sessionId, session);
 
     res.json({
       speak: out.speak,
@@ -307,12 +341,36 @@ app.get("/api/voice/state", (_req, res) => res.json(voiceState));
 
 app.post("/api/voice/state", (req, res) => {
   voiceState = { ...voiceState, ...(req.body ?? {}), at: new Date().toISOString() };
+  events.publish("voice", voiceState);
   res.json({ ok: true });
 });
 
 app.post("/api/voice/metric", async (req, res) => {
-  await logMetric({ kind: "voice", ...(req.body ?? {}) });
+  const body = req.body ?? {};
+  const kind = body.kind === "wake" ? "wake" : "voice";
+  await logMetric({ ...body, kind });
   res.json({ ok: true });
+});
+
+// Live updates for the mirror page (display on/off, voice state) as
+// Server-Sent Events — replaces three 1–2s polling loops.
+app.get("/api/events", (req, res) => {
+  res.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.flushHeaders();
+  const send = (type, data) => res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+  send("display", { on: display.isOn() });
+  send("voice", voiceState);
+  const unsubscribe = events.subscribe(send);
+  const ping = setInterval(() => res.write(": ping\n\n"), 25_000);
+  req.on("close", () => {
+    clearInterval(ping);
+    unsubscribe();
+  });
 });
 
 // ---- reminders ----------------------------------------------------
@@ -390,18 +448,76 @@ app.get("/api/memory/search", async (req, res) => {
   }
 });
 
-memory.startIngestLoop();
+// What the mirror remembers, newest first (drives the list on /setup).
+app.get("/api/memory/recent", (req, res) => {
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  try {
+    res.json({ items: memory.recent({ limit, offset }) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-app
-  .listen(PORT, () => console.log(`mirror server on http://localhost:${PORT}`))
-  .on("error", (err) => {
-    if (err.code === "EADDRINUSE") {
-      console.error(
-        `\nPort ${PORT} is already in use — another mirror server (or a ` +
-          `leftover one) is running.\nWindows: npx kill-port ${PORT}   ` +
-          `then re-run npm run dev\n`,
-      );
-      process.exit(1);
-    }
-    throw err;
-  });
+// Forget one memory: index + vector + source log line + tombstone.
+app.delete("/api/memory/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "bad_id" });
+  try {
+    const r = await memory.forget(id);
+    if (!r) return res.status(404).json({ error: "not_found" });
+    res.json({ forgotten: { id: r.id, source: r.source, file: r.file } });
+  } catch (err) {
+    console.error("memory forget:", err.message);
+    res.status(500).json({ error: "forget_failed" });
+  }
+});
+
+// Keep the local model loaded and its tool prompt cached (Ollama keep_alive is
+// 30 min; re-warm before that). Cheap when already warm (~1s).
+const warm = () =>
+  warmLocalRouter().then((ok) => ok && console.log("local router warm"));
+setTimeout(warm, 3000);
+setInterval(warm, 20 * 60_000).unref();
+
+memory.startIngestLoop(undefined, {
+  retentionDays: async () => (await getSettings()).memory?.retentionDays ?? 0,
+});
+
+// ---- production: serve the built mirror page ---------------------------
+// `npm run build` then `npm start` — one process, no Vite. Kiosk at
+// http://localhost:3001 (set WEB_ORIGIN to that for the OAuth redirects).
+const WEB_DIST = join(here, "..", "web", "dist");
+if (existsSync(join(WEB_DIST, "index.html"))) {
+  app.use(express.static(WEB_DIST));
+  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(join(WEB_DIST, "index.html")));
+}
+
+// ---- listen ----------------------------------------------------------
+// Default: both loopback addresses. "localhost" resolves to ::1 first on
+// Windows, and a refused IPv6 connect there can stall ~2s before falling back.
+const bindTo = HOST ? [HOST] : ["127.0.0.1", "::1"];
+let bound = 0;
+for (const host of bindTo) {
+  http
+    .createServer(app)
+    .listen(PORT, host, () => {
+      if (bound++ === 0) console.log(`mirror server on http://localhost:${PORT}`);
+      console.log(`  listening on ${host.includes(":") ? `[${host}]` : host}:${PORT}`);
+      if (HOST && !["127.0.0.1", "localhost", "::1"].includes(HOST))
+        console.warn("  ! reachable from your network — see ALLOWED_HOSTS in .env.example");
+    })
+    .on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(
+          `\nPort ${PORT} is already in use — another mirror server (or a ` +
+            `leftover one) is running.\nWindows: npx kill-port ${PORT}   ` +
+            `then re-run npm run dev\n`,
+        );
+        process.exit(1);
+      }
+      // ::1 unavailable (IPv6 disabled) is fine as long as 127.0.0.1 bound
+      if (host === "::1" && ["EADDRNOTAVAIL", "EAFNOSUPPORT"].includes(err.code)) return;
+      throw err;
+    });
+}

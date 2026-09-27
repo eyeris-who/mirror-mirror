@@ -1,0 +1,15 @@
+[
+  { "text": "actually pause it", "tool": "pause_music", "note": "real transcript, took 19.4s" },
+  { "text": "where did i park", "tool": "recall", "note": "real transcript, took 12.4s" },
+  { "text": "what about tomorrow", "tool": "get_weather", "history": [{ "role": "user", "content": "whats the weather" }, { "role": "assistant", "content": "Right now in Vaughan: overcast, with a high of 25 and a low of 15 degrees Celsius." }], "note": "real transcript" },
+  { "text": "and this weekend", "tool": "get_weather", "history": [{ "role": "user", "content": "whats the weather" }, { "role": "assistant", "content": "Right now in Vaughan: overcast, with a high of 25 and a low of 15 degrees Celsius." }], "note": "real transcript" },
+  { "text": "stop the music for a sec", "tool": "pause_music" },
+  { "text": "skip ahead to the next song please", "tool": "next_track" },
+  { "text": "who sings this", "tool": "whats_playing" },
+  { "text": "put on something relaxing", "tool": "play_playlist" },
+  { "text": "is it going to be chilly tonight", "tool": "get_weather" },
+  { "text": "do I have anything going on friday", "tool": "get_schedule" },
+  { "text": "I'm heading to bed", "tool": "sleep_display" },
+  { "text": "tell me what I noted about Alex", "tool": "recall" },
+  { "text": "how many unread emails do I have about the quarterly budget", "tool": null, "note": "real transcript; no email tool — must not pick one" }
+]

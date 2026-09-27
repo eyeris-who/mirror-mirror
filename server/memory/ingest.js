@@ -2,7 +2,8 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join, extname, basename } from "node:path";
-import { getDb, DIR, getCursor, setCursor, insertChunk } from "./db.js";
+import { getDb, DIR, getCursor, setCursor, insertChunk, isForgottenChunk } from "./db.js";
+import { createLock } from "./lock.js";
 import { embedBatch, available } from "./embed.js";
 import * as google from "../google.js";
 import { RECALL_RE } from "../agent/patterns.js";
@@ -14,6 +15,29 @@ const NOTES_LOG = join(DIR, "notes.jsonl");
 const NOTES_FOLDER = process.env.NOTES_DIR || join(here, "..", "..", "notes");
 
 const hashOf = (s) => createHash("sha1").update(s).digest("hex").slice(0, 16);
+
+// Deterministic commands aren't memories, with these exceptions.
+const KEEP_TIER0_TOOLS = new Set(["set_reminder"]);
+
+/** Dedupe key for a chunk. Exported so forget/retention can match log rows. */
+export const chunkHash = (c) => hashOf(`${c.source}|${c.ts}|${c.text}`);
+
+/**
+ * The assistant reply logged for user turn `i`: the next assistant row from the
+ * same session, as long as that session didn't start another turn first. (A
+ * turn that was never answered must not borrow a later, unrelated reply.)
+ */
+export function pairedReply(rows, i, lookahead = 12) {
+  const me = rows[i];
+  const end = Math.min(rows.length, i + 1 + lookahead);
+  for (let j = i + 1; j < end; j++) {
+    const r = rows[j];
+    if (!r || r.sessionId !== me.sessionId) continue;
+    if (r.role === "user") return null;
+    if (r.role === "assistant") return r;
+  }
+  return null;
+}
 
 function splitLong(text, max = 1200) {
   if (text.length <= max) return [text];
@@ -68,16 +92,22 @@ async function fromConversations() {
     }
 
     // The paired assistant reply tells us what this turn was for.
-    const reply = rows.slice(i + 1).find((r) => r?.role === "assistant") ?? null;
+    const reply = pairedReply(rows, i);
 
     const text = row.text.trim();
     if (text.length < 4) continue;
 
-    // Don't index the turn if:
+    // What's worth remembering from a conversation is what you *told* the mirror
+    // — not the control chatter. Skip the turn if:
+    //  - it was a deterministic command (tier 0: "pause", "what's the weather",
+    //    "play jazz", "remind me…") — transactional, not conversational
     //  - it created a note — the note text is already ingested from notes.jsonl
     //  - it's a memory-lookup question (routed to recall, or just phrased as one)
     //  - the assistant couldn't handle it — a dead-end turn isn't a memory
-    if (reply?.tool === "recall" || reply?.tool === "add_note") continue;
+    //    — except reminders: "remind me to renew my passport" is also a fact
+    //    about your life you may ask about later ("what's renewing soon?")
+    if (reply?.tier === 0 && !KEEP_TIER0_TOOLS.has(reply.tool)) continue;
+    if (["recall", "add_note", "forget"].includes(reply?.tool)) continue;
     if (RECALL_RE.test(text.toLowerCase())) continue;
     if (reply?.text?.startsWith("I can't help with that yet")) continue;
     chunks.push({
@@ -176,45 +206,55 @@ async function fromCalendarHistory() {
 
 // ---- run --------------------------------------------------------------
 
-let running = false;
+// Ingest, forget and retention all touch cursors + the index; run them one at
+// a time. See lock.js.
+export const withIndexLock = createLock();
+
+// Several ingest requests while one is waiting to start collapse into it — it
+// will see everything they would have.
+let queued = null;
 
 /** Incremental ingest of every source. Returns a per-source summary. */
-export async function ingestAll() {
-  if (running) return { skipped: true };
-  running = true;
+export function ingestAll() {
+  if (queued) return queued;
+  const p = withIndexLock(() => {
+    if (queued === p) queued = null; // started: later calls queue a fresh pass
+    return ingestPass();
+  });
+  queued = p;
+  return p;
+}
+
+async function ingestPass() {
+  if (!(await available())) {
+    return { error: "embed_model_unavailable" };
+  }
+
+  const sources = [
+    ["conversation", fromConversations],
+    ["note", fromNotesLog],
+    ["notefile", fromNotesFolder],
+    ["event", fromCalendarHistory],
+  ];
+
   const summary = {};
-  try {
-    if (!(await available())) {
-      running = false;
-      return { error: "embed_model_unavailable" };
+  for (const [key, fn] of sources) {
+    const { chunks, cursor } = await fn();
+    const fresh = chunks
+      .map((c) => ({ ...c, hash: chunkHash(c) }))
+      // skip what we have, and what the user asked to forget (never re-embedded)
+      .filter((c) => !hasHash(c.hash) && !isForgottenChunk(c));
+
+    let added = 0;
+    for (let i = 0; i < fresh.length; i += 32) {
+      const batch = fresh.slice(i, i + 32);
+      const vecs = await embedBatch(batch.map((c) => c.text));
+      batch.forEach((c, j) => {
+        if (insertChunk(c, vecs[j])) added++;
+      });
     }
-
-    const sources = [
-      ["conversation", fromConversations],
-      ["note", fromNotesLog],
-      ["notefile", fromNotesFolder],
-      ["event", fromCalendarHistory],
-    ];
-
-    for (const [key, fn] of sources) {
-      const { chunks, cursor } = await fn();
-      const fresh = chunks
-        .map((c) => ({ ...c, hash: hashOf(`${c.source}|${c.ts}|${c.text}`) }))
-        .filter((c) => !hasHash(c.hash));
-
-      let added = 0;
-      for (let i = 0; i < fresh.length; i += 32) {
-        const batch = fresh.slice(i, i + 32);
-        const vecs = await embedBatch(batch.map((c) => c.text));
-        batch.forEach((c, j) => {
-          if (insertChunk(c, vecs[j])) added++;
-        });
-      }
-      if (cursor !== "") setCursor(key, cursor);
-      summary[key] = { scanned: chunks.length, added };
-    }
-  } finally {
-    running = false;
+    if (cursor !== "") setCursor(key, cursor);
+    summary[key] = { scanned: chunks.length, added };
   }
   return summary;
 }

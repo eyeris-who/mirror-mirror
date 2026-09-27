@@ -342,6 +342,103 @@ function AssistantSetting({ status }) {
   );
 }
 
+const SOURCE_LABEL = {
+  conversation: "said",
+  note: "note",
+  journal: "journal",
+  event: "calendar",
+};
+const memDate = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+const PAGE = 25;
+
+/** Everything the mirror remembers, newest first, with a two-click delete. */
+function MemorySetting() {
+  const [items, setItems] = useState(null);
+  const [more, setMore] = useState(false);
+  const [confirming, setConfirming] = useState(null);
+  const [msg, setMsg] = useState(null);
+
+  const load = (offset = 0) =>
+    fetch(`/api/memory/recent?limit=${PAGE}&offset=${offset}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => {
+        setItems((prev) => (offset ? [...(prev ?? []), ...d.items] : d.items));
+        setMore(d.items.length === PAGE);
+      })
+      .catch(() => setItems([]));
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const forget = (item) => {
+    if (confirming !== item.id) {
+      setConfirming(item.id);
+      return;
+    }
+    setConfirming(null);
+    fetch(`/api/memory/${item.id}`, { method: "DELETE" })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(({ forgotten }) => {
+        setItems((prev) => prev.filter((x) => x.id !== item.id));
+        setMsg(
+          forgotten.file
+            ? `forgotten — it also lives in notes/${forgotten.file}, which wasn't changed`
+            : "forgotten",
+        );
+      })
+      .catch(() => setMsg("could not forget that"));
+  };
+
+  return (
+    <div className="setup__row setup__row--stack">
+      <div className="setup__loc-head">
+        <span className="setup__name">Memory</span>
+        <span className="setup__hint">
+          what the mirror can recall — or say "forget what I said about…"
+        </span>
+      </div>
+
+      {items === null && <span className="setup__hint">loading…</span>}
+      {items?.length === 0 && (
+        <span className="setup__hint">nothing yet (is Ollama running with nomic-embed-text?)</span>
+      )}
+
+      {items?.length > 0 && (
+        <ul className="setup__memory">
+          {items.map((m) => (
+            <li key={m.id}>
+              <span className="setup__memory-meta">
+                {SOURCE_LABEL[m.source] ?? m.source}
+                {m.meta?.file ? ` · ${m.meta.file}` : ""} · {memDate.format(new Date(m.ts))}
+              </span>
+              <span className="setup__memory-text">{m.text}</span>
+              <button
+                className={confirming === m.id ? "setup__danger" : ""}
+                onClick={() => forget(m)}
+                onBlur={() => setConfirming((c) => (c === m.id ? null : c))}
+              >
+                {confirming === m.id ? "forget?" : "✕"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {more && (
+        <div>
+          <button onClick={() => load(items.length)}>show more</button>
+        </div>
+      )}
+      {msg && <span className="setup__hint">{msg}</span>}
+    </div>
+  );
+}
+
 export default function Setup() {
   const [status, setStatus] = useState(null);
 
@@ -395,6 +492,8 @@ export default function Setup() {
       <p className="setup__hint" style={{ marginTop: "1rem" }}>
         Music source right now: <b>{musicSource}</b>
       </p>
+
+      <MemorySetting />
 
       <p className="setup__foot">
         <a href="/">← back to mirror</a>

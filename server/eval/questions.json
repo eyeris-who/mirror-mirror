@@ -1,40 +1,148 @@
 [
   {
     "q": "what did I need from the store?",
-    "expect": ["milk", "eggs", "coffee filters"],
-    "note": "3 statements over 2 weeks; the latest says the fridge is stocked — recency + contradiction"
+    "kind": "update",
+    "expect": ["fridge is fully stocked", "picked up the eggs"],
+    "answer": { "include": [["stocked", "picked up", "got the eggs", "got everything", "all of it", "don't need", "no longer need"]], "exclude": ["still need"] },
+    "note": "list on day -14, partial on -8, done on -1 — the answer must reflect the latest"
   },
   {
-    "q": "have I mentioned feeling stressed or anxious recently?",
-    "expect": ["burned out", "anxious about the presentation"],
-    "note": "mood retrieval across journal + conversation"
+    "q": "do I still need anything from the store?",
+    "kind": "update",
+    "expect": ["fridge is fully stocked", "picked up the eggs"],
+    "answer": { "include": [["no", "nothing", "stocked", "picked up", "got everything", "don't need"]], "exclude": ["still need to get eggs", "you need milk", "you need to pick up"] },
+    "note": "present-tense version of the same update chain"
   },
   {
-    "q": "when is Alex's birthday and what does he like?",
-    "expect": ["October 14", "single origin coffee"],
-    "note": "fact lookup from a spoken note"
+    "q": "when is my haircut?",
+    "kind": "update",
+    "expect": ["27th"],
+    "answer": { "include": [["27"]] },
+    "note": "booked for the 20th, later moved to the 27th"
   },
   {
-    "q": "what did my manager say about my workload?",
-    "expect": ["moving two projects", "reshuffle"],
-    "note": "the resolution is more recent than the complaint"
-  },
-  {
-    "q": "what book was I supposed to read?",
-    "expect": ["The Overstory"],
-    "note": "single-hop fact"
-  },
-  {
-    "q": "did I say anything about the car?",
-    "expect": ["rattling noise when I brake"]
-  },
-  {
-    "q": "what's renewing soon?",
-    "expect": ["passport", "parking permit"],
-    "note": "multiple matches, different dates"
+    "q": "what's the wifi password?",
+    "kind": "update",
+    "expect": ["sunflower42"],
+    "answer": { "include": [["sunflower42", "sunflower 42"]] },
+    "note": "changed on day -3"
   },
   {
     "q": "what did I decide about exercise?",
-    "expect": ["running", "Tuesday and Thursday"]
+    "kind": "update",
+    "expect": ["running on Tuesday and Thursday"],
+    "answer": { "include": [["run"]] },
+    "note": "swimming plan on -40, running decision on -5"
+  },
+  {
+    "q": "what did my manager say about my workload?",
+    "kind": "update",
+    "expect": ["moving two projects", "reshuffle"],
+    "answer": { "include": [["two projects", "moving", "reshuffle", "off your plate", "lighter"]] },
+    "note": "complaint on -31, resolution on -4"
+  },
+  {
+    "q": "when is Alex's birthday and what does he like?",
+    "kind": "fact",
+    "expect": ["October 14"],
+    "answer": { "include": [["october 14", "14th of october", "oct 14"], ["coffee"]] }
+  },
+  {
+    "q": "what book was I supposed to read?",
+    "kind": "fact",
+    "expect": ["The Overstory"],
+    "answer": { "include": [["overstory"]] }
+  },
+  {
+    "q": "who recommended that book to me?",
+    "kind": "fact",
+    "expect": ["Priya"],
+    "answer": { "include": [["priya"]] }
+  },
+  {
+    "q": "did I say anything about the car?",
+    "kind": "fact",
+    "expect": ["rattling noise when I brake"],
+    "answer": { "include": [["rattl", "brake", "noise"]], "exclude": ["manager", "workload", "umbrella", "park", "level 3", "elevator"] },
+    "note": "must not pad the answer with unrelated excerpts"
+  },
+  {
+    "q": "where did I park?",
+    "kind": "fact",
+    "expect": ["level 3"],
+    "answer": { "include": [["level 3", "level three", "third level"]] },
+    "note": "saved as an implicit note by the router"
+  },
+  {
+    "q": "what's my gym locker code?",
+    "kind": "fact",
+    "expect": ["2291"],
+    "answer": { "include": [["2291", "22 91"]] }
+  },
+  {
+    "q": "who has my umbrella?",
+    "kind": "fact",
+    "expect": ["Sam"],
+    "answer": { "include": [["sam"]] }
+  },
+  {
+    "q": "what does grandma want?",
+    "kind": "fact",
+    "expect": ["visit for the holidays"],
+    "answer": { "include": [["visit"]] }
+  },
+  {
+    "q": "when should I go back to the dentist?",
+    "kind": "fact",
+    "expect": ["six months"],
+    "answer": { "include": [["six months", "6 months"]] }
+  },
+  {
+    "q": "what's renewing soon?",
+    "kind": "multi",
+    "expect": ["passport", "parking permit"],
+    "answer": { "include": [["passport"], ["parking"]] },
+    "note": "the passport one was a reminder request — only findable if reminder turns reach memory"
+  },
+  {
+    "q": "have I mentioned feeling stressed or anxious recently?",
+    "kind": "multi",
+    "expect": ["burned out", "anxious about the presentation"],
+    "answer": { "include": [["anxious", "burned out", "burnt out", "stress"]] }
+  },
+  {
+    "q": "what did I need to buy two weeks ago?",
+    "kind": "window",
+    "expect": ["milk, eggs, and coffee filters"],
+    "answer": { "include": [["milk"], ["filter"]] },
+    "note": "asks about THEN — the time window should win over recency"
+  },
+  {
+    "q": "how did I feel yesterday?",
+    "kind": "window",
+    "expect": ["good day"],
+    "answer": { "include": [["good", "lighter", "ran", "run"]] }
+  },
+  {
+    "q": "what's my dog's name?",
+    "kind": "unanswerable",
+    "answer": { "include": [["don't have", "do not have", "no record", "nothing about", "not sure", "don't know", "no information", "haven't", "no mention", "didn't mention", "not mentioned", "can't find", "couldn't find", "no details"]] }
+  },
+  {
+    "q": "when is my flight to Tokyo?",
+    "kind": "unanswerable",
+    "answer": { "include": [["don't have", "do not have", "no record", "nothing about", "not sure", "don't know", "no information", "haven't", "no mention", "didn't mention", "not mentioned", "can't find", "couldn't find", "no details"]] }
+  },
+  {
+    "q": "what did the plumber say about the sink?",
+    "kind": "unanswerable",
+    "answer": { "include": [["don't have", "do not have", "no record", "nothing about", "not sure", "don't know", "no information", "haven't", "no mention", "didn't mention", "not mentioned", "can't find", "couldn't find", "no details"]], "exclude": ["dentist"] }
+  },
+  {
+    "q": "what's my gym locker code?",
+    "kind": "forgotten",
+    "forget": "my gym locker code is 2291",
+    "answer": { "include": [["don't have", "do not have", "no record", "nothing about", "not sure", "don't know", "no information", "haven't", "no mention", "didn't mention", "not mentioned", "can't find", "couldn't find", "no details"]], "exclude": ["2291", "22 91"] },
+    "note": "forgotten just before asking — must be gone from retrieval and answer"
   }
 ]

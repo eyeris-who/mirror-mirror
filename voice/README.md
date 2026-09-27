@@ -9,8 +9,8 @@ source (missing "Microsoft Visual C++ 14.0"), that package has no wheel for your
 Python version — make the venv with an older one: `py -3.12 -m venv .venv`.
 
 ```
-mic ─► energy VAD ─► faster-whisper ─► "mirror mirror on the wall" ?
-                                        │ yes
+mic ─► energy VAD ─► faster-whisper ─► fuzzy match: wake phrase?
+       (800 ms pre-roll)                │ yes
                                         ▼
                               speak "Hmm?"  ─► record command ─► whisper
                                         │
@@ -19,7 +19,16 @@ mic ─► energy VAD ─► faster-whisper ─► "mirror mirror on the wall" ?
                                         │
                                         ▼
                      speak reply  (morning routine = speak each segment)
+                                        │
+                                        ▼
+                  keep the mic open ~4s ─► more speech? ─► loop (no wake phrase)
+                                          silence / "that's all" ─► idle
 ```
+
+After the first exchange the conversation stays open: follow-ups don't need the
+wake phrase, and the server threads the last few turns into the model so "and
+tomorrow?" or "add that to my reminders" resolve. `MIRROR_FOLLOWUP_S=0` turns
+this off.
 
 ## Run it
 
@@ -34,6 +43,9 @@ python main.py
 ```
 
 (`python -m venv .venv` and  `pip install -r requirements.txt` are one-time only for setup)
+
+After that, from the project root: `npm run voice` (or `npm run dev:all` for
+everything at once). Tests: `npm run test:voice`.
 
 If activation is blocked: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then retry.
 macOS / Linux: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
@@ -59,9 +71,14 @@ If the meter shows near-silence, set `MIRROR_MIC` to a real input device
 | Where | What |
 |---|---|
 | `/setup` page or voice `"setup"` | wake phrase, your name, morning playlist, units |
-| `MIRROR_SERVER` env | Node server URL (default `http://localhost:3001`) |
-| `WHISPER_MODEL` env | `tiny.en` \| `base.en` (default) \| `small.en` — bigger = slower, more accurate |
+| `MIRROR_SERVER` env | Node server URL (default `http://127.0.0.1:3001`) |
+| `WHISPER_MODEL` env | `tiny.en` \| `base.en` (default) \| `distil-small.en` \| `small.en` — bigger = slower, more accurate; `distil-small.en` is the best next step (downloads on first run) |
+| `WHISPER_THREADS` env | CPU threads for Whisper (default: half your logical cores, max 8) |
+| `MIRROR_MIN_CONF` env | transcripts below this confidence that also look like silence are dropped (default `0.35`) |
+| `MIRROR_FILLER_S` env | say "One sec." if the answer takes longer than this (default `1.5`; `0` disables) |
+| `MIRROR_BARGE_IN` env | listen for "stop" while talking and cut the reply off (default on; `0` disables) |
 | `MIRROR_MIC` env | input device name/index if not the system default (`python -m sounddevice` lists them) |
+| `MIRROR_FOLLOWUP_S` env | seconds the mic stays open for a wake-free follow-up after each answer (default `4`; `0` disables) |
 
 ## What it can do
 
@@ -84,10 +101,39 @@ every few seconds while idle).
 
 ## Wake word — current approach and upgrades
 
-Right now `listen.py` uses a plain energy threshold (calibrated to the room at
-startup) to find utterances, then transcribes each one and checks for the wake
-phrase (`wake.py`). Simple, no native dependencies, fine in a quiet room.
-Downsides: constant Whisper load, and it struggles with background noise or a TV.
+`listen.py` finds utterances with an energy threshold calibrated to the room at
+startup — a higher level to start recording and a lower one to keep going, with
+800 ms of audio kept from before the trigger so the first syllable isn't lost.
+Each utterance is transcribed and `wake.py` looks for the wake phrase.
+
+Whisper rarely spells a short phrase the same way twice, so matching is fuzzy:
+"a mirror", "Hey, Mira", "hay mirror" and a bare "Mirror," all wake for
+"hey mirror", while "hey mom" or "I bought a mirror" don't. The command is taken
+from the original transcript, so "what's" and "5 p.m." reach the server intact.
+Tune `THRESHOLD` in `wake.py` if you get misses or false wakes; `eval:report`
+counts near misses to help. Tests: `python -m unittest discover -s tests`.
+
+Transcription uses beam search, a short prompt of real commands (so "lofi"
+doesn't come out "low-fi"), and pads sub-second clips. Noise that makes Whisper
+hallucinate a word is dropped by confidence. `python miccheck.py` runs this same
+pipeline on a 4-second recording and prints the wake score.
+
+The gate's noise floor keeps adapting (`noise.py`): steady sound like music
+from the mirror's own speakers raises the trigger within seconds, so it doesn't
+record back-to-back clips of lyrics. The page ducks the music while the
+assistant is engaged.
+
+Remaining downsides: every utterance costs a Whisper pass (the mirror is deaf
+for ~0.4 s while it runs), and a loud TV can still trigger transcriptions.
+
+### Audio regression clips
+
+`python clips.py synthetic` writes a seed set spoken by Windows SAPI;
+`python clips.py record "hey mirror what's the weather"` records your own
+(`--expect none` for a clip that must not wake). `python -m unittest
+tests.test_audio` replays every clip through Whisper and the wake matcher.
+Clips live in `tests/audio/` (gitignored). Record a few in the real room,
+with music on and from across the room.
 
 Swap in a real wake-word engine by replacing the wake check in `main.py`:
 
@@ -98,5 +144,15 @@ Swap in a real wake-word engine by replacing the wake check in `main.py`:
 
 ## TTS
 
-`speak.py` uses `pyttsx3` (offline, uses the OS voice — SAPI5 on Windows). For a
-better voice, install `piper-tts`, download a voice `.onnx`, and swap `Voice.say`.
+On Windows `speak.py` keeps **one** PowerShell/SAPI process running and sends it
+sentences over stdin. Starting a new one per sentence cost ~400–560 ms each
+(~2.7 s over a four-part morning briefing), and a running process can be told
+to stop mid-sentence — that's what makes barge-in work: say "stop", "that's
+enough" or "never mind" while the mirror talks. Elsewhere it uses `pyttsx3`
+(no barge-in). `python speak.py "hello"` is a quick check.
+
+If the answer takes more than 1.5 s, the mirror says "One sec." so the wait
+isn't silent.
+
+For a better voice, install `piper-tts`, download a voice `.onnx`, and add a
+backend to `speak.py`.

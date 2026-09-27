@@ -78,11 +78,32 @@ export async function headlines(category = "top", n = 3) {
 
 const CAPTION = /getty images|nurphoto|via getty|shutterstock|reuters\/|\bAP Photo\b|photo by|photograph|illustration|screenshot|image caption|image source|\|\s*\w+\s+images/i;
 
+const NAMED_ENTITIES = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
+  hellip: "…", mdash: "—", ndash: "–", rsquo: "’", lsquo: "‘",
+  ldquo: "“", rdquo: "”",
+};
+
+/** Decode HTML entities so SAPI doesn't read "and hashtag 8217" out loud. */
+function decodeEntities(s) {
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => cp(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => cp(Number(d)))
+    .replace(/&([a-z]+);/gi, (m, name) => NAMED_ENTITIES[name.toLowerCase()] ?? m);
+}
+function cp(n) {
+  try {
+    return String.fromCodePoint(n);
+  } catch {
+    return "";
+  }
+}
+
 /** First ~130 words of an article, for reading aloud. Null if extraction fails. */
 export async function readArticle(link, maxWords = 130) {
   try {
     const art = await extract(link);
-    const text = (art?.content || "")
+    const text = decodeEntities(art?.content || "")
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim();

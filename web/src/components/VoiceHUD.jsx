@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { usePolling } from "../hooks/usePolling.js";
+import { useServerEvents } from "../hooks/useServerEvents.js";
 
 const TIER = {
   0: "local · rules",
@@ -15,7 +15,7 @@ const STATUS = {
 
 /** Bottom overlay that shows what the voice assistant is doing. Hidden at idle. */
 export default function VoiceHUD() {
-  const { data } = usePolling("/api/voice/state", 1000);
+  const { voice: data } = useServerEvents();
   const lastAction = useRef("");
 
   // e.g. free Spotify account: "play my playlist" opens the playlist page.

@@ -48,13 +48,29 @@ async function getWeatherSpoken({ when = "today" } = {}) {
   const deg = unitWord(w.unit);
 
   if (when === "week") {
-    const parts = w.days
-      .slice(0, 7)
-      .map((d) => `${d.day} ${d.text.toLowerCase()}, ${d.low} to ${d.high}`);
-    return {
-      speak: `Here's the week in ${w.place.name}. ${joinList(parts)} degrees ${deg}.`,
-      data: w,
-    };
+    // Seven days read out in full is a ~45-word run-on nobody can follow by
+    // ear. Detail for the next three days, then one summary sentence.
+    const days = w.days.slice(0, 7);
+    const name = (d, i) =>
+      i === 0 ? "today" : i === 1 ? "tomorrow" : weekdayFmt.format(new Date(`${d.date}T12:00:00`));
+    const first = days
+      .slice(0, 3)
+      .map((d, i) => `${name(d, i)} ${d.text.toLowerCase()}, ${d.low} to ${d.high}`);
+    let speak = `Here's the week in ${w.place.name}: ${joinList(first)} degrees ${deg}.`;
+
+    const rest = days.slice(3);
+    if (rest.length) {
+      const highs = rest.map((d) => d.high);
+      const lo = Math.min(...highs);
+      const hi = Math.max(...highs);
+      const wet = rest
+        .map((d, i) => ({ d, i: i + 3 }))
+        .filter(({ d }) => /rain|drizzle|shower|snow|sleet|storm|thunder/i.test(d.text))
+        .map(({ d, i }) => name(d, i));
+      speak += ` After that, highs ${lo === hi ? `around ${lo}` : `of ${lo} to ${hi}`}`;
+      speak += wet.length ? `, with rain or snow on ${joinList(wet)}.` : ", and no rain expected.";
+    }
+    return { speak, data: w };
   }
 
   const d = w.days[when === "tomorrow" ? 1 : 0];
@@ -189,11 +205,79 @@ async function recallMemory({ query } = {}) {
   }
 }
 
-async function addNote({ text, journal } = {}) {
+/** "I need to buy ink" -> "you need to buy ink", for reading a note back. */
+export function toSecondPerson(text) {
+  const map = {
+    "i am": "you are", "i'm": "you're", im: "you're", "i've": "you've",
+    ive: "you've", "i'll": "you'll", "i'd": "you'd", i: "you", me: "you",
+    my: "your", mine: "yours", myself: "yourself",
+  };
+  return text
+    .replace(/[.!]+$/, "")
+    .replace(/\b(i am|i'm|im|i've|ive|i'll|i'd|i|me|my|mine|myself)\b/gi, (m) => map[m.toLowerCase()]);
+}
+
+async function addNote({ text, journal, implicit } = {}) {
   const body = (text || "").trim();
   if (body.length < 2) return { speak: "What should I note?" };
   await memory.addNote(body, journal ? "journal" : "note");
+  // Nobody asked for this one to be saved, so say exactly what was kept — it
+  // doubles as a check that speech-to-text heard it right.
+  if (implicit) return { speak: `Noted: ${toSecondPerson(body)}.` };
   return { speak: journal ? "Added to your journal." : "Noted." };
+}
+
+const shortDate = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric" });
+const clip = (s, n = 140) => (s.length > n ? `${s.slice(0, n).replace(/\s+\S*$/, "")}…` : s);
+
+async function forgetMemory({ query } = {}) {
+  const q = (query || "").trim();
+  if (/^(it|about it)$/i.test(q)) return { speak: "Okay." }; // "forget it" = never mind
+
+  let hit;
+  try {
+    if (q && !/^(that|this|the last one|last one|what i just said)$/i.test(q) && !(await memory.available())) {
+      return { speak: "My memory isn't running yet, so I can't search it." };
+    }
+    hit = await memory.findForgettable(q);
+  } catch {
+    return { speak: "I couldn't search my memory just now." };
+  }
+  if (!hit) {
+    return {
+      speak: q
+        ? "I couldn't find anything close enough to that to forget."
+        : "You don't have any notes to forget.",
+    };
+  }
+  return {
+    speak: `Forget this, from ${shortDate.format(new Date(hit.ts))}: ${clip(hit.text)}? Say yes to delete it.`,
+    expectReply: true,
+    replyTimeoutMs: 10000,
+    forgetFlow: { id: hit.id },
+  };
+}
+
+/**
+ * Answer to "Forget this …? Say yes". Returns a reply, or null when the text
+ * isn't a yes/no — the caller then drops the pending delete and treats the
+ * text as a new command.
+ */
+export async function continueForgetFlow(flow, text) {
+  const t = (text || "").toLowerCase().trim().replace(/[.!?]+$/, "");
+  if (/^(yes|yeah|yep|yup|sure|do it|delete it|forget it|confirm|correct|ok|okay)\b/.test(t)) {
+    const r = await memory.forget(flow.id);
+    if (!r) return { speak: "That's already gone." };
+    return {
+      speak: r.file
+        ? `Forgotten. It came from your notes file ${r.file}, which I haven't changed.`
+        : "Forgotten.",
+    };
+  }
+  if (!t || t === "__timeout__" || /^(no|nope|nah|cancel|keep it|don'?t|never ?mind|stop)\b/.test(t)) {
+    return { speak: "Okay, I'll keep it." };
+  }
+  return null;
 }
 
 function sleepDisplay() {
@@ -582,6 +666,16 @@ export const TOOLS = [
     },
   },
   {
+    name: "forget",
+    description:
+      "Delete something from the user's memory ('forget what I said about…', 'delete my note about…'). Asks the user to confirm before deleting. `query` is what to forget; empty means their most recent note.",
+    input_schema: {
+      type: "object",
+      properties: { query: { type: "string" } },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "sleep_display",
     description:
       "Fade the mirror to black (screen off / sleep / goodnight). Music and voice keep running.",
@@ -614,6 +708,7 @@ const IMPL = {
   whats_playing: whatsPlaying,
   recall: recallMemory,
   add_note: addNote,
+  forget: forgetMemory,
   get_news: getNewsSpoken,
   set_news_category: setNewsCategory,
   set_reminder: setReminder,

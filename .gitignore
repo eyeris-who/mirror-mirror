@@ -10,5 +10,8 @@ notes/*
 !notes/.gitkeep
 !notes/EXAMPLE.md
 voice/.venv/
-voice/__pycache__/
+__pycache__/
 *.log
+
+# voice regression recordings (your voice stays local)
+voice/tests/audio/

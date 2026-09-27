@@ -1,5 +1,6 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { usePolling } from "../hooks/usePolling.js";
+import { useDuckedVolume } from "../hooks/useDuck.js";
 
 const fmt = (ms) => {
   if (!ms || ms < 0) return "0:00";
@@ -27,6 +28,12 @@ export default function MusicPlayer() {
   const curUrl = useRef(null);
   const [blocked, setBlocked] = useState(false);
   const [, tick] = useReducer((x) => x + 1, 0);
+
+  // Lower the music while the voice assistant is listening or talking.
+  const setAudioVolume = useCallback((v) => {
+    if (audio.current) audio.current.volume = Math.max(0, Math.min(1, v));
+  }, []);
+  useDuckedVolume(setAudioVolume);
 
   const isAudius = data?.source === "audius";
   const track = data?.track;

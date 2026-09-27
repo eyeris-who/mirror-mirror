@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useDuckedVolume } from "./useDuck.js";
+
+const SPOTIFY_VOLUME = 0.6;
 
 /**
  * Loads the Spotify Web Playback SDK and registers this browser as a Spotify
@@ -9,6 +12,13 @@ import { useEffect, useState } from "react";
 export function useSpotifyPlayer(enabled = true) {
   const [deviceId, setDeviceId] = useState(null);
   const [ready, setReady] = useState(false);
+  const playerRef = useRef(null);
+
+  // Duck while the voice assistant is engaged (no-op until the player exists).
+  const setVolume = useCallback((v) => {
+    playerRef.current?.setVolume(v).catch?.(() => {});
+  }, []);
+  useDuckedVolume(setVolume, SPOTIFY_VOLUME);
 
   useEffect(() => {
     if (!enabled) return;
@@ -24,13 +34,14 @@ export function useSpotifyPlayer(enabled = true) {
         window.onSpotifyWebPlaybackSDKReady = () => {
           player = new window.Spotify.Player({
             name: "Smart Mirror",
-            volume: 0.6,
+            volume: SPOTIFY_VOLUME,
             getOAuthToken: (cb) =>
               fetch("/api/spotify/token")
                 .then((r) => r.json())
                 .then((d) => d.token && cb(d.token))
                 .catch(() => {}),
           });
+          playerRef.current = player;
           player.addListener("ready", ({ device_id }) => {
             setDeviceId(device_id);
             setReady(true);
@@ -52,6 +63,7 @@ export function useSpotifyPlayer(enabled = true) {
     return () => {
       cancelled = true;
       player?.disconnect();
+      playerRef.current = null;
       document.getElementById("spotify-sdk")?.remove();
       window.onSpotifyWebPlaybackSDKReady = () => {};
     };
