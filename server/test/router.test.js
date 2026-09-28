@@ -32,6 +32,13 @@ const CASES = [
   ["what s playing", "whats_playing"],
   ["who s singing", "whats_playing"],
 
+  // tier-1 misses from eval:router, now caught by rules
+  ["who sings this", "whats_playing"],
+  ["who sang this?", "whats_playing"],
+  ["what artist is this", "whats_playing"],
+  ["put on something relaxing", "play_playlist"],
+  ["put on some jazz", "play_playlist"],
+
   // speech-to-text damage seen in real logs
   ["Place on low-fi.", "play_playlist"],
   ["A trending low-fi.", "play_trending"],
@@ -104,4 +111,11 @@ test("statements route to an implicit note at tier 0, commands still win", () =>
   assert.equal(r.args.implicit, true);
   // also a first-person fact, but it's a reminder request — that pattern wins
   assert.equal(route0("I need to buy milk, remind me at 5pm")?.tool, "set_reminder");
+});
+
+test('"put on X" searches the mood, but only at the start of the sentence', () => {
+  assert.deepEqual(route0("put on something relaxing").args, { name: "relaxing" });
+  assert.deepEqual(route0("play something upbeat").args, { name: "upbeat" });
+  assert.deepEqual(route0("play something").args, {});
+  assert.notEqual(route0("I need to put on sunscreen before the beach")?.tool, "play_playlist");
 });
