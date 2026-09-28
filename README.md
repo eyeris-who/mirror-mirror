@@ -241,9 +241,10 @@ tier-1 phrasings × 3 runs:
 | **hybrid (now)** | **880 ms** | **2,233 ms** | 30/39 |
 
 The server also warms the model and its tool prompt at startup and every 20
-minutes, and caps tier-1 routing at 10 s (`LOCAL_ROUTE_TIMEOUT_MS`). Known
-misses: "who sings this" → recall, "put on something relaxing" →
-play_trending, and it picks a tool for requests it has none for (email).
+minutes, and caps tier-1 routing at 10 s (`LOCAL_ROUTE_TIMEOUT_MS`). Its two
+misses — "who sings this" → recall, "put on something relaxing" →
+play_trending — are now caught by tier-0 rules before the model sees them.
+Known miss: it picks a tool for requests it has none for (email).
 
 ### Speech pipeline
 
@@ -339,16 +340,10 @@ voice-service restart.
 | "start my morning routine" | date → time → weather → events → **3 headlines** (7s to pick one, else) → playlist. Also wakes the display. |
 | "setup" | spoken questionnaire |
 
-<<<<<<< HEAD
-Reminders show on the mirror (right column) and are spoken when due — the server
-wakes the mirror and queues them at `/api/voice/announcements`, which the voice
-service polls between wake-word listens. Reminders are stored in
+Reminders show on the mirror (right column) and are spoken when due — the
+server wakes the mirror and queues them at `/api/voice/announcements`, which the
+voice service polls between wake-word listens. Stored in
 `server/data/reminders.json` (gitignored).
-=======
-Reminders show on the mirror and are spoken when due — the server wakes the
-mirror and queues them at `/api/voice/announcements`, which the voice service
-polls between wake-word listens. Stored in `server/data/reminders.json`
-(gitignored).
 
 ## Personal memory (RAG)
 
@@ -482,7 +477,6 @@ Sep 9, 2026, *before* the fixes on this page:
 Older `metrics.jsonl` voice rows reported "STT 6.1 s", but that field actually
 measured wake → command, including the "Hmm?" reply and a second listen.
 `eval:report` now skips those rows; new rows time the Whisper call alone.
->>>>>>> 134f5db (add RAG stuff)
 
 ## APIs & auth — what each feature needs
 

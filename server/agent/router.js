@@ -164,7 +164,7 @@ export function tier0(text) {
     return { tier: 0, tool: "next_track" };
   if (/^(previous|prev|back|go back|last)( song| track| one)?[.!]?$|previous (song|track)|go back a (song|track)|restart (the |this )?(song|track)/.test(t))
     return { tier: 0, tool: "previous_track" };
-  if (/what('?s| is) (playing|this( song)?)|what song is this|who('?s| is) (this|singing)|name of this song/.test(t))
+  if (/what('?s| is) (playing|this( song)?)|what song is this|who('?s| is) (this|singing)|name of this song|who (sings|sang|is singing|performs) (this|that|it)\b|who('?s| is) this by|what artist is this/.test(t))
     return { tier: 0, tool: "whats_playing" };
 
   // trending / charts (check before generic "play X")
@@ -188,13 +188,14 @@ export function tier0(text) {
   if (/play (my )?(morning )?(playlist|mix|music)$|my morning playlist|put on (some )?music|start (the )?music/.test(t))
     return { tier: 0, tool: "play_playlist", args: {} };
 
-  // "play X" — X can be a playlist name, genre, mood, artist
+  // "play X" / "put on X" — X can be a playlist name, genre, mood, artist.
+  // "put on" only at the start: "I need to put on sunscreen" is a note.
   {
     const m = t.match(
-      /(?:^|\b)play (?:me |us )?(?:some )?(.+?)(?:\s+(?:music|playlist|please|for me))?[.!]?$/,
+      /(?:(?:^|\b)play|^(?:please )?put on) (?:me |us )?(?:some )?(.+?)(?:\s+(?:music|playlist|please|for me))?[.!]?$/,
     );
     if (m && m[1]) {
-      const raw = m[1].replace(/^(my|the|a)\s+/, "").trim();
+      const raw = m[1].replace(/^(my|the|a)\s+/, "").replace(/^something\s+(?=\S)/, "").trim();
       const generic = /^(music|playlist|something|tunes|songs?|anything)$/.test(raw);
       return {
         tier: 0,
